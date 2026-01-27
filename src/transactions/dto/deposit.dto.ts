@@ -1,4 +1,4 @@
-import { IsNotEmpty, IsNumber, IsPositive, IsString } from 'class-validator';
+import { IsNotEmpty, IsNumber, IsOptional, IsPositive, IsString } from 'class-validator';
 
 export class DepositDto {
   @IsNumber()
@@ -10,6 +10,10 @@ export class DepositDto {
   @IsNumber()
   @IsPositive()
   montant_transaction: number;
+
+  @IsOptional()
+  @IsNumber()
+  iduser?: number;
 
   @IsString()
   @IsNotEmpty()

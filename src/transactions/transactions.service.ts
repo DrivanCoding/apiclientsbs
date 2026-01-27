@@ -5,6 +5,8 @@ import { Compte } from '../entities/compte.entity';
 import { Transaction } from '../entities/transaction.entity';
 import { DepositDto } from './dto/deposit.dto';
 
+const SYSTEM_USER_ID = 1;
+
 @Injectable()
 export class TransactionsService {
   constructor(
@@ -57,7 +59,7 @@ export class TransactionsService {
 
       const transaction = manager.create(Transaction, {
         idtransaction: nextId,
-        iduser: 0,
+        iduser: dto.iduser ?? SYSTEM_USER_ID,
         idcompte: compte.idcompte,
         montant_transaction: dto.montant_transaction.toFixed(2),
         type_transaction: 'versement',
