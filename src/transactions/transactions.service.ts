@@ -48,9 +48,6 @@ export class TransactionsService {
       const currentSolde = parseFloat(compte.solde ?? '0');
       const newSolde = currentSolde + dto.montant_transaction;
 
-      compte.solde = newSolde.toFixed(2);
-      await manager.save(compte);
-
       const nextIdResult = await manager
         .createQueryBuilder(Transaction, 'transaction')
         .select('MAX(transaction.idtransaction)', 'max')
@@ -71,7 +68,12 @@ export class TransactionsService {
           'Collecte mobile via ' + dto.operateur + ' sur ' + dto.numero_telephone,
       });
 
-      return manager.save(transaction);
+      const savedTransaction = await manager.save(transaction);
+
+      compte.solde = newSolde.toFixed(2);
+      await manager.save(compte);
+
+      return savedTransaction;
     });
   }
 
