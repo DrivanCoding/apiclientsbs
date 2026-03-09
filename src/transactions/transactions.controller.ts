@@ -11,6 +11,7 @@ import {
 import { Transaction } from '../entities/transaction.entity';
 import { TransactionsService } from './transactions.service';
 import { DepositDto } from './dto/deposit.dto';
+import { PreouvertureDto } from './dto/preouverture.dto';
 
 @Controller('transactions')
 export class TransactionsController {
@@ -24,6 +25,11 @@ export class TransactionsController {
   @Post('collecte')
   collect(@Body() dto: DepositDto) {
     return this.service.deposit(dto);
+  }
+
+  @Post('preouverture')
+  preouverture(@Body() dto: PreouvertureDto) {
+    return this.service.preouvertureWithDeposit(dto);
   }
 
   @Get()
