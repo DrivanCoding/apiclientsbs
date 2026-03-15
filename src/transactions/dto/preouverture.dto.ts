@@ -29,6 +29,26 @@ export class PreouvertureDto {
   mot_de_passe: string;
 
   @IsOptional()
+  @IsString()
+  type_piece?: string;
+
+  @IsOptional()
+  @IsString()
+  num_piece_identite?: string;
+
+  @IsOptional()
+  @IsString()
+  adresse?: string;
+
+  @IsOptional()
+  @IsString()
+  code_postal?: string;
+
+  @IsOptional()
+  @IsString()
+  ville?: string;
+
+  @IsOptional()
   @IsNumber()
   @Min(1)
   idtype?: number;
@@ -45,10 +65,9 @@ export class PreouvertureDto {
   @IsNotEmpty()
   operateur: string;
 
-  @IsOptional()
   @IsNumber()
   @Min(1)
-  idag?: number;
+  idag: number;
 
   @IsOptional()
   @IsString()

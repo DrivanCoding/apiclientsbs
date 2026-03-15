@@ -1,6 +1,7 @@
 import { IsNotEmpty, IsNumber, IsOptional, IsPositive, IsString } from 'class-validator';
 
 export class DepositDto {
+  @IsOptional()
   @IsNumber()
   idclient: number;
 
@@ -23,9 +24,11 @@ export class DepositDto {
   @IsNotEmpty()
   numero_telephone: string;
 
+  @IsOptional()
   @IsString()
   references?: string;
 
+  @IsOptional()
   @IsString()
   description?: string;
 }

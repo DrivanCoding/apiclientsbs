@@ -7,8 +7,11 @@ import {
   ParseIntPipe,
   Patch,
   Post,
+  Req,
+  UseGuards,
 } from '@nestjs/common';
 import { Transaction } from '../entities/transaction.entity';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { TransactionsService } from './transactions.service';
 import { DepositDto } from './dto/deposit.dto';
 import { PreouvertureDto } from './dto/preouverture.dto';
@@ -23,8 +26,10 @@ export class TransactionsController {
   }
 
   @Post('collecte')
-  collect(@Body() dto: DepositDto) {
-    return this.service.deposit(dto);
+  @UseGuards(JwtAuthGuard)
+  collect(@Body() dto: DepositDto, @Req() req: { user?: { idclient?: number } }) {
+    const idclient = Number(req.user?.idclient || 0);
+    return this.service.deposit(dto, idclient);
   }
 
   @Post('preouverture')

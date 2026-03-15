@@ -76,6 +76,7 @@ CREATE TABLE `clients` (
   `commentaires` text COLLATE utf8mb4_general_ci,
   `photo_identite` varchar(255) COLLATE utf8mb4_general_ci DEFAULT NULL,
   `signature` varchar(255) COLLATE utf8mb4_general_ci DEFAULT NULL,
+  `idag` int DEFAULT NULL,
   `idzone` int DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
@@ -98,6 +99,48 @@ CREATE TABLE `compte` (
   `idguichet` int DEFAULT NULL,
   `idinst` int DEFAULT NULL,
   `idag` int DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `notification`
+--
+
+CREATE TABLE `notification` (
+  `idnotification` int NOT NULL,
+  `idclient` int NOT NULL,
+  `titre` varchar(120) COLLATE utf8mb4_general_ci NOT NULL,
+  `message` text COLLATE utf8mb4_general_ci NOT NULL,
+  `type` varchar(40) COLLATE utf8mb4_general_ci DEFAULT 'versement',
+  `lu` tinyint(1) DEFAULT '0',
+  `date_creation` datetime DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `setting`
+--
+
+CREATE TABLE `setting` (
+  `idsetting` int NOT NULL,
+  `operator_actif` json NOT NULL,
+  `date_creation` datetime DEFAULT CURRENT_TIMESTAMP,
+  `date_modification` datetime DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `liste_operator`
+--
+
+CREATE TABLE `liste_operator` (
+  `idliste_operator` int NOT NULL,
+  `liste_operator` json NOT NULL,
+  `date_creation` datetime DEFAULT CURRENT_TIMESTAMP,
+  `date_modification` datetime DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 -- --------------------------------------------------------
@@ -184,7 +227,8 @@ ALTER TABLE `agence`
 --
 ALTER TABLE `clients`
   ADD PRIMARY KEY (`idclient`),
-  ADD UNIQUE KEY `code_client` (`code_client`);
+  ADD UNIQUE KEY `code_client` (`code_client`),
+  ADD KEY `idx_client_agence` (`idag`);
 
 --
 -- Indexes for table `compte`
@@ -195,6 +239,25 @@ ALTER TABLE `compte`
   ADD KEY `FK_COMPTE_TYPECOMPTE` (`idtype`),
   ADD KEY `clientcompte` (`idclient`),
   ADD KEY `fk_agencecompte` (`idag`);
+
+--
+-- Indexes for table `notification`
+--
+ALTER TABLE `notification`
+  ADD PRIMARY KEY (`idnotification`),
+  ADD KEY `FK_NOTIFICATION_CLIENT` (`idclient`);
+
+--
+-- Indexes for table `setting`
+--
+ALTER TABLE `setting`
+  ADD PRIMARY KEY (`idsetting`);
+
+--
+-- Indexes for table `liste_operator`
+--
+ALTER TABLE `liste_operator`
+  ADD PRIMARY KEY (`idliste_operator`);
 
 --
 -- Indexes for table `transaction`
@@ -244,6 +307,24 @@ ALTER TABLE `compte`
   MODIFY `idcompte` int NOT NULL AUTO_INCREMENT;
 
 --
+-- AUTO_INCREMENT for table `notification`
+--
+ALTER TABLE `notification`
+  MODIFY `idnotification` int NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `setting`
+--
+ALTER TABLE `setting`
+  MODIFY `idsetting` int NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `liste_operator`
+--
+ALTER TABLE `liste_operator`
+  MODIFY `idliste_operator` int NOT NULL AUTO_INCREMENT;
+
+--
 -- AUTO_INCREMENT for table `transaction`
 --
 ALTER TABLE `transaction`
@@ -272,6 +353,18 @@ ALTER TABLE `compte`
   ADD CONSTRAINT `clientcompte` FOREIGN KEY (`idclient`) REFERENCES `clients` (`idclient`),
   ADD CONSTRAINT `fk_agencecompte` FOREIGN KEY (`idag`) REFERENCES `agence` (`idag`),
   ADD CONSTRAINT `FK_COMPTE_TYPECOMPTE` FOREIGN KEY (`idtype`) REFERENCES `typecompte` (`idtype`);
+
+--
+-- Constraints for table `clients`
+--
+ALTER TABLE `clients`
+  ADD CONSTRAINT `fk_client_agence` FOREIGN KEY (`idag`) REFERENCES `agence` (`idag`);
+
+--
+-- Constraints for table `notification`
+--
+ALTER TABLE `notification`
+  ADD CONSTRAINT `FK_NOTIFICATION_CLIENT` FOREIGN KEY (`idclient`) REFERENCES `clients` (`idclient`);
 
 --
 -- Constraints for table `transaction`
