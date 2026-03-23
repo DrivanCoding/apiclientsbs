@@ -8,7 +8,7 @@ import {
   Min,
 } from 'class-validator';
 
-export class CreateAgenceCompteDto {
+export class CreateClientCompteDto {
   @IsNumber()
   @Min(1)
   idtype: number;
@@ -26,4 +26,10 @@ export class CreateAgenceCompteDto {
   @IsNotEmpty()
   @Matches(/^\d{4,6}$/)
   pin_code: string;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(1)
+  idag?: number;
 }
+

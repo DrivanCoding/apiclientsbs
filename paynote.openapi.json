@@ -1,0 +1,1967 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Débuter avec les API de Paynote",
+    "version": "1.0.0",
+    "description": ""
+  },
+  "servers": [
+    {
+      "url": "https://omapi-token.ynote.africa",
+      "description": "Serveur d'Authentification pour les API: d'encaisement / remboursement MTN Cameroun, remboursement Orange Cameroun et encaisement M2U"
+    },
+    {
+      "url": "https://omapi.ynote.africa/prod",
+      "description": "Url API de base pour les API: d'encaisement / remboursement MTN Cameroun, remboursement Orange Cameroun et encaisement M2U"
+    },
+    {
+      "url": "https://api-s1.orange.cm",
+      "description": "Serveur pour l'API d'encaisement Orange Cameroun"
+    }
+  ],
+  "tags": [
+    {
+      "name": "I. API D'ENCAISEMENT ORANGE CAMEROUN",
+      "description": "Doc de l'API d'encaisement Orange CMR"
+    },
+    {
+      "name": "II. API MUTUALISEE ORANGE CAMEROUN",
+      "description": "Doc de l'API mutualisée Orange CMR"
+    },
+    {
+      "name": "III. API DE REMBOURSEMENT ORANGE CAMEROUN",
+      "description": "Doc de l'API de remboursement Orange CMR"
+    },
+    {
+      "name": "IV. API D'ENCAISEMENT MTN CAMEROUN",
+      "description": "Doc de l'API d'encaisement MTN CMR"
+    },
+    {
+      "name": "V. API DE REMBOURSEMENT MTN CAMEROUN",
+      "description": "Doc de l'API de remboursement MTN CMR"
+    },
+    {
+      "name": "VI. API D'ENCAISEMENT M2U Cameroun",
+      "description": "API d'encaisement (M2U Camerounn)"
+    },
+    {
+      "name": "VII. API D'ENCAISEMENT Yoomee Cameroun",
+      "description": "API d'encaisement (Yoomee Camerounn)"
+    }
+  ],
+  "paths": {
+    "/oauth2/token": {
+      "post": {
+        "tags" : ["VI. API D'ENCAISEMENT M2U Cameroun", "II. API MUTUALISEE ORANGE CAMEROUN", "III. API DE REMBOURSEMENT ORANGE CAMEROUN", "IV. API D'ENCAISEMENT MTN CAMEROUN", "V. API DE REMBOURSEMENT MTN CAMEROUN", "VII. API D'ENCAISEMENT Yoomee Cameroun"],
+        "summary": "Obtenir le jeton d'accès",
+        "description": "Pour récupérer un jeton, faites un POST sur l'URL `https://omapi-token.ynote.africa/oauth2/token`. Il s'agit d'un post de type OAuth2 via `client_credentials`.\n(Il faut stocker le temp d'expiration dès la réception du jeton, Avant chaque requête, vérifiez si le timestamp actuel dépasse l'expiration, Si oui, demandez un nouveau jeton, sinon utilisez le jeton actuel).\n\n<h2> Champs requis:</h2>\n <ul><li><span style='color:red'>ClientId</span> (Votre identifiant client)</li> <li><span style='color:red'>ClientSecret</span> (Votre identifiant secret)</li></ul>\n\n Si vous faites les tests directement sur cette page web, il faut aller dans le menu <strong>Authentication</strong> pour rajouter le ClientId dans le champ username et le ClientSecret dans password ensuite cliquez sur <b>SET</b>. </br></br>La <b>figure 1</b> illustre les champs renseignés dans l'interface de cette page web.![Exemple Screenshot](https://www.paynote.africa/wp-content/uploads/2025/10/Screenshot-2025-10-20-at-12.38.22-PM.png)\n\nLa <b>figure 2</b> présente un exemple d'utilisation équivalente dans Postman.\n![Exemple Screenshot](https://www.paynote.africa/wp-content/uploads/2025/09/Screenshot-2025-09-26-at-9.18.00-PM.png)\n<h3>Note</h3> <span style=\"font-family: 'Beretta', sans-serif; font-size: 14.3px; line-height: 1.6;\">Vous devez impérativement traiter le paramètre <b>expires_in</b> de manière efficace afin de ne demander un nouveau jeton d'accès uniquement si l'ancien a expiré. Cette optimisation permet de réduire le nombre de requêtes inutiles.</span> </br> \n<span style=\"font-family: 'Beretta', sans-serif; font-size: 14.3px; line-height: 1.6;\">Pour effectuer un test directement sur ce site, veuillez rempalcer les valeurs de la partie exemple ci-dessous par ceux qui vous ont été transmis ensuite cliquez sur <b>TRY</b>.</span>",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "grant_type": { "type": "string", "example": "client_credentials" }
+                },
+                "required": ["grant_type"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Réponse avec jeton d'accès",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "succès": {
+                    "summary": "Réponse OK",
+                    "value": {
+                      "access_token": "eyJhbGciOiJIUzI1...",
+                      "token_type": "Bearer",
+                      "expires_in": 3600
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "curl",
+            "label": "cURL",
+            "source": "curl -X POST --location 'https://omapi-token.ynote.africa/oauth2/token' --header 'Content-Type: application/x-www-form-urlencoded' --header 'Authorization: Basic Q2xpZW50SUQ6Q2xpZW50U2VjcmV0' --data-urlencode 'grant_type=client_credentials'"
+          },
+          {
+            "lang": "php",
+            "label": "PHP",
+            "source": "<?php\n$ch = curl_init();\ncurl_setopt($ch, CURLOPT_URL, \"https://omapi-token.ynote.africa/oauth2/token\");\ncurl_setopt($ch, CURLOPT_POST, true);\ncurl_setopt($ch, CURLOPT_HTTPHEADER, [\n  \"Content-Type: application/x-www-form-urlencoded\",\n  \"Authorization: Basic Q2xpZW50SUQ6Q2xpZW50U2VjcmV0\"\n]);\ncurl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query([\n  \"grant_type\" => \"client_credentials\"\n]));\ncurl_setopt($ch, CURLOPT_RETURNTRANSFER, true);\n$response = curl_exec($ch);\ncurl_close($ch);\necho $response;\n?>"
+          },
+          {
+            "lang": "python",
+            "label": "Python",
+            "source": "import requests\n\nurl = \"https://omapi-token.ynote.africa/oauth2/token\"\nheaders = {\n  \"Content-Type\": \"application/x-www-form-urlencoded\",\n  \"Authorization\": \"Basic Q2xpZW50SUQ6Q2xpZW50U2VjcmV0\"\n}\ndata = {\n  \"grant_type\": \"client_credentials\"\n}\n\nresponse = requests.post(url, headers=headers, data=data)\nprint(response.json())"
+          },
+          {
+            "lang": "ruby",
+            "label": "Ruby",
+            "source": "require \"net/http\"\nrequire \"uri\"\n\nuri = URI(\"https://omapi-token.ynote.africa/oauth2/token\")\nrequest = Net::HTTP::Post.new(uri)\nrequest[\"Content-Type\"] = \"application/x-www-form-urlencoded\"\nrequest[\"Authorization\"] = \"Basic Q2xpZW50SUQ6Q2xpZW50U2VjcmV0\"\nrequest.set_form_data(\"grant_type\" => \"client_credentials\")\n\nresponse = Net::HTTP.start(uri.hostname, uri.port, use_ssl: true) do |http|\n  http.request(request)\nend\n\nputs response.body"
+          },
+          {
+            "lang": "java",
+            "label": "Java",
+            "source": "import java.net.*;\nimport java.io.*;\n\npublic class Main {\n  public static void main(String[] args) throws Exception {\n    URL url = new URL(\"https://omapi-token.ynote.africa/oauth2/token\");\n    HttpURLConnection conn = (HttpURLConnection) url.openConnection();\n    conn.setRequestMethod(\"POST\");\n    conn.setRequestProperty(\"Content-Type\", \"application/x-www-form-urlencoded\");\n    conn.setRequestProperty(\"Authorization\", \"Basic Q2xpZW50SUQ6Q2xpZW50U2VjcmV0\");\n    conn.setDoOutput(true);\n\n    String data = \"grant_type=client_credentials\";\n    try(OutputStream os = conn.getOutputStream()) {\n      os.write(data.getBytes());\n    }\n\n    BufferedReader in = new BufferedReader(new InputStreamReader(conn.getInputStream()));\n    String inputLine;\n    StringBuilder content = new StringBuilder();\n    while ((inputLine = in.readLine()) != null) {\n      content.append(inputLine);\n    }\n    in.close();\n    conn.disconnect();\n\n    System.out.println(content.toString());\n  }\n}"
+          },
+          {
+            "lang": "go",
+            "label": "Go",
+            "source": "package main\n\nimport (\n  \"fmt\"\n  \"io/ioutil\"\n  \"net/http\"\n  \"net/url\"\n  \"strings\"\n)\n\nfunc main() {\n  client := &http.Client{}\n  data := url.Values{}\n  data.Set(\"grant_type\", \"client_credentials\")\n\n  req, _ := http.NewRequest(\"POST\", \"https://omapi-token.ynote.africa/oauth2/token\", strings.NewReader(data.Encode()))\n  req.Header.Add(\"Content-Type\", \"application/x-www-form-urlencoded\")\n  req.Header.Add(\"Authorization\", \"Basic Q2xpZW50SUQ6Q2xpZW50U2VjcmV0\")\n\n  resp, _ := client.Do(req)\n  body, _ := ioutil.ReadAll(resp.Body)\n  fmt.Println(string(body))\n}"
+          }
+        ],
+        "security": [{ "basicAuth": [] }]
+      }
+    },
+    "/token": {
+      "post": {
+        "tags" : ["I. API D'ENCAISEMENT ORANGE CAMEROUN"],
+        "summary": "Obtenir le jeton d'accès",
+        "description": "Cet API communique directement avec les serveurs de notre partenaire Orange Cameroun mais la souscription reste ouverte chez nous. Pour récupérer un jeton, faites un POST sur l'URL `https://api-s1.orange.cm/token`. Il s'agit d'un post de type OAuth2 via `client_credentials`.\n(Il faut stocker le temp d'expiration dès la réception du jeton, Avant chaque requête, vérifiez si le timestamp actuel dépasse l'expiration, Si oui, demandez un nouveau jeton, sinon utilisez le jeton actuel).\n\n<h2> Champs requis:</h2>\n <ul><li><span style='color:red'>Username (customerKey)</span> (Votre clé client)</li> <li><span style='color:red'>Password (customersecret)</span> (Votre clé secrète)</li></ul>\n\n Si vous faites les tests directement sur cette page web, il faut aller dans le menu <strong>API SERVERS</strong> et choisissez <i>Serveur d'Authentification API d'encaisement Orange Cameroun</i> <b>(https://api-s1.orange.cm)</b>. Puis allez dans le menu <strong>Authentication</strong> pour rajouter la clé client dans le champ username et la clé secrète dans le champ password ensuite cliquez sur <b>SET</b>. </br></br>La <b>figure 1</b> illustre les champs renseignés dans l'interface de cette page web.![Exemple Screenshot](https://www.paynote.africa/wp-content/uploads/2025/10/Screenshot-2025-10-22-at-11.14.52-AM.png)\n\nLa <b>figure 2</b> présente un exemple d'utilisation équivalente dans Postman.\n![Exemple Screenshot](https://www.paynote.africa/wp-content/uploads/2025/10/Screenshot-2025-10-22-at-11.05.07-AM.png)\n<h3>Note</h3> <span style=\"font-family: 'Beretta', sans-serif; font-size: 14.3px; line-height: 1.6;\">Vous devez impérativement traiter le paramètre <b>expires_in</b> de manière efficace afin de ne demander un nouveau jeton d'accès uniquement si l'ancien a expiré. Cette optimisation permet de réduire le nombre de requêtes inutiles.</span> </br> \n<span style=\"font-family: 'Beretta', sans-serif; font-size: 14.3px; line-height: 1.6;\">Pour effectuer un test directement sur ce site, veuillez rempalcer les valeurs de la partie exemple ci-dessous par ceux qui vous ont été transmis ensuite cliquez sur <b>TRY</b>.</span>",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "grant_type": { "type": "string", "example": "client_credentials" }
+                },
+                "required": ["grant_type"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Réponse avec jeton d'accès",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "succès": {
+                    "summary": "Réponse OK",
+                    "value": {
+                      "access_token": "2e537751-xxx-3e12-97b9-xx",
+                      "scope": "am_application_scope default",
+                      "token_type": "Bearer",
+                      "expires_in": 3481
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "curl",
+            "label": "cURL",
+            "source": "curl --location --request POST 'https://api-s1.orange.cm/token' --header 'Content-Type: application/x-www-form-urlencoded' --header 'Authorization: Basic Y3VzdG9tZXJrZXk6Y3VzdG9tZXJzZWNyZXQ=' --data-urlencode 'grant_type=client_credentials'"
+          },
+          {
+            "lang": "PHP",
+            "label": "PHP",
+            "source": "<?php\n\n$curl = curl_init();\n\ncurl_setopt_array($curl, [\n  CURLOPT_URL => 'https://api-s1.orange.cm/token',\n  CURLOPT_RETURNTRANSFER => true,\n  CURLOPT_CUSTOMREQUEST => 'POST',\n  CURLOPT_HTTPHEADER => [\n    'Content-Type: application/x-www-form-urlencoded',\n    'Authorization: Basic Y3VzdG9tZXJrZXk6Y3VzdG9tZXJzZWNyZXQ='\n  ],\n  CURLOPT_POSTFIELDS => http_build_query(['grant_type' => 'client_credentials'])\n]);\n\n$response = curl_exec($curl);\ncurl_close($curl);\necho $response;\n?>"
+          },
+          {
+            "lang": "Python",
+            "label": "Python",
+            "source": "import requests\n\nurl = 'https://api-s1.orange.cm/token'\nheaders = {\n    'Content-Type': 'application/x-www-form-urlencoded',\n    'Authorization': 'Basic Y3VzdG9tZXJrZXk6Y3VzdG9tZXJzZWNyZXQ='\n}\ndata = {'grant_type': 'client_credentials'}\n\nresponse = requests.post(url, headers=headers, data=data)\nprint(response.text)"
+          },
+          {
+            "lang": "Go",
+            "label": "Go",
+            "source": "package main\n\nimport (\n    \"fmt\"\n    \"net/http\"\n    \"net/url\"\n    \"io/ioutil\"\n    \"strings\"\n)\n\nfunc main() {\n    client := &http.Client{}\n    data := url.Values{}\n    data.Set(\"grant_type\", \"client_credentials\")\n\n    req, _ := http.NewRequest(\"POST\", \"https://api-s1.orange.cm/token\", strings.NewReader(data.Encode()))\n    req.Header.Add(\"Content-Type\", \"application/x-www-form-urlencoded\")\n    req.Header.Add(\"Authorization\", \"Basic Y3VzdG9tZXJrZXk6Y3VzdG9tZXJzZWNyZXQ=\")\n\n    res, _ := client.Do(req)\n    body, _ := ioutil.ReadAll(res.Body)\n    fmt.Println(string(body))\n}"
+          },
+          {
+            "lang": "Java",
+            "label": "Java",
+            "source": "import java.io.*;\nimport java.net.*;\n\npublic class Main {\n    public static void main(String[] args) throws Exception {\n        URL url = new URL(\"https://api-s1.orange.cm/token\");\n        HttpURLConnection conn = (HttpURLConnection) url.openConnection();\n        conn.setRequestMethod(\"POST\");\n        conn.setRequestProperty(\"Content-Type\", \"application/x-www-form-urlencoded\");\n        conn.setRequestProperty(\"Authorization\", \"Basic Y3VzdG9tZXJrZXk6Y3VzdG9tZXJzZWNyZXQ=\");\n        conn.setDoOutput(true);\n\n        String data = \"grant_type=client_credentials\";\n        try (OutputStream os = conn.getOutputStream()) {\n            os.write(data.getBytes());\n        }\n\n        BufferedReader in = new BufferedReader(new InputStreamReader(conn.getInputStream()));\n        String line;\n        StringBuilder response = new StringBuilder();\n        while ((line = in.readLine()) != null) {\n            response.append(line);\n        }\n        in.close();\n        System.out.println(response.toString());\n    }\n}"
+          },
+          {
+            "lang": "Ruby",
+            "label": "Ruby",
+            "source": "require 'net/http'\nrequire 'uri'\n\nuri = URI.parse('https://api-s1.orange.cm/token')\nrequest = Net::HTTP::Post.new(uri)\nrequest['Content-Type'] = 'application/x-www-form-urlencoded'\nrequest['Authorization'] = 'Basic Y3VzdG9tZXJrZXk6Y3VzdG9tZXJzZWNyZXQ='\nrequest.set_form_data({'grant_type' => 'client_credentials'})\n\nresponse = Net::HTTP.start(uri.hostname, uri.port, use_ssl: true) do |http|\n  http.request(request)\nend\n\nputs response.body"
+          }
+        ],
+        "security": [{ "basicAuth": [] }]
+      }
+    },
+    "/omcoreapis/1.0.2/mp/init": {
+      "post": {
+        "tags": ["I. API D'ENCAISEMENT ORANGE CAMEROUN"],
+        "summary": "Initier la requête de paiement",
+        "description": "Une fois que vous avez récupéré le jeton à l'étape 1, utilisez ce dernier pour initier le paiement dans votre requête sur l'URL `https://api-s1.orange.cm/omcoreapis/1.0.2/mp/init`.</br>Pour tester directement sur cette page, sélectionnez `https://api-s1.orange.cm` dans le menu <b>API Servers</b>.\n <h2> Champs requis:</h2>\n <ul><li><span style='color:red'>Jeton d'authentification</span> (Ce jeton récupéré à l'étape 1 sera placé dans le Header)</li> <li><span style='color:red'>X-AUTH-TOKEN</span> (Ce paramètre sera également placé dans le Header, sa valeur vous sera envoyé après votre souscription)</li></ul>\n<span style=\"font-family: 'Beretta', sans-serif; font-size: 14.3px; line-height: 1.6;\">Le corp de cette requête restera vide.</span>\n![Exemple Screenshot](https://www.paynote.africa/wp-content/uploads/2025/10/Screenshot-2025-10-22-at-12.41.59-PM.png)\n![Exemple Screenshot](https://www.paynote.africa/wp-content/uploads/2025/10/Screenshot-2025-10-22-at-12.37.00-PM.png)\n<h2>Note</h2><span style=\"font-family: 'Beretta', sans-serif; font-size: 14px; line-height: 1.6;\">L'API vous enverra une réponse contenant un paramètre <b>payToken</b> vous permettra d'effectuer le ppaiement dans la prochaine requêtte et plus tard de retrouver le statut de votre transaction. Ci-dessous les exemples de requêtes dans quelques langages de programmation suivi d'un exemple de réponse de l'API:</span> </br> \n<span style=\"font-family: 'Beretta', sans-serif; font-size: 14.3px; line-height: 1.6;\">Pour effectuer un test directement sur ce site, veuillez rempalcer les valeurs de la partie exemple ci-dessous par ceux qui vous ont été transmis ensuite cliquez sur <b>TRY</b>.</span>",
+        "security": [{ "bearerAuth": [] }],
+         "parameters": [
+          {
+            "name": "X-AUTH-TOKEN",
+            "in": "header",
+            "description": "X-AUTH-TOKEN fourni par Paynote.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "WU5PVXXXXX"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/PaymentRequestMPINIT" },
+              "example": {
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Réponse avec succès",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "succès": {
+                    "summary": "Réponse OK",
+                    "value": {
+                      "message": "Merchant payment request successfully initiated",
+                      "data": {
+                          "payToken": "MP25102XXXXXXXX"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "curl",
+            "label": "cURL",
+            "source": "curl --location --request POST 'https://api-s1.orange.cm/omcoreapis/1.0.2/mp/init' --header 'X-AUTH-TOKEN: WU5PVEVIRUFEOllOT1RFSEVBRDIwMjA=' --header 'Authorization: Bearer xxxx'"
+          },
+          {
+            "lang": "PHP",
+            "label": "PHP",
+            "source": "<?php\n\n$curl = curl_init();\n\ncurl_setopt_array($curl, [\n  CURLOPT_URL => 'https://api-s1.orange.cm/omcoreapis/1.0.2/mp/init',\n  CURLOPT_RETURNTRANSFER => true,\n  CURLOPT_CUSTOMREQUEST => 'POST',\n  CURLOPT_HTTPHEADER => [\n    'X-AUTH-TOKEN: WU5PVEVIRUFEOllOT1RFSEVBRDIwMjA=',\n    'Authorization: Bearer xxxx'\n  ]\n]);\n\n$response = curl_exec($curl);\ncurl_close($curl);\necho $response;\n?>"
+          },
+          {
+            "lang": "Python",
+            "label": "Python",
+            "source": "import requests\n\nurl = 'https://api-s1.orange.cm/omcoreapis/1.0.2/mp/init'\nheaders = {\n    'X-AUTH-TOKEN': 'WU5PVEVIRUFEOllOT1RFSEVBRDIwMjA=',\n    'Authorization': 'Bearer xxxx'\n}\n\nresponse = requests.post(url, headers=headers)\nprint(response.text)"
+          },
+          {
+            "lang": "Go",
+            "label": "Go",
+            "source": "package main\n\nimport (\n    \"fmt\"\n    \"net/http\"\n    \"io/ioutil\"\n)\n\nfunc main() {\n    client := &http.Client{}\n    req, _ := http.NewRequest(\"POST\", \"https://api-s1.orange.cm/omcoreapis/1.0.2/mp/init\", nil)\n    req.Header.Add(\"X-AUTH-TOKEN\", \"WU5PVEVIRUFEOllOT1RFSEVBRDIwMjA=\")\n    req.Header.Add(\"Authorization\", \"Bearer xxxx\")\n\n    res, _ := client.Do(req)\n    body, _ := ioutil.ReadAll(res.Body)\n    fmt.Println(string(body))\n}"
+          },
+          {
+            "lang": "Java",
+            "label": "Java",
+            "source": "import java.io.*;\nimport java.net.*;\n\npublic class Main {\n    public static void main(String[] args) throws Exception {\n        URL url = new URL(\"https://api-s1.orange.cm/omcoreapis/1.0.2/mp/init\");\n        HttpURLConnection conn = (HttpURLConnection) url.openConnection();\n        conn.setRequestMethod(\"POST\");\n        conn.setRequestProperty(\"X-AUTH-TOKEN\", \"WU5PVEVIRUFEOllOT1RFSEVBRDIwMjA=\");\n        conn.setRequestProperty(\"Authorization\", \"Bearer xxxx\");\n\n        BufferedReader in = new BufferedReader(new InputStreamReader(conn.getInputStream()));\n        String line;\n        StringBuilder response = new StringBuilder();\n        while ((line = in.readLine()) != null) {\n            response.append(line);\n        }\n        in.close();\n        System.out.println(response.toString());\n    }\n}"
+          },
+          {
+            "lang": "Ruby",
+            "label": "Ruby",
+            "source": "require 'net/http'\nrequire 'uri'\n\nuri = URI.parse('https://api-s1.orange.cm/omcoreapis/1.0.2/mp/init')\nrequest = Net::HTTP::Post.new(uri)\nrequest['X-AUTH-TOKEN'] = 'WU5PVEVIRUFEOllOT1RFSEVBRDIwMjA='\nrequest['Authorization'] = 'Bearer xxxx'\n\nresponse = Net::HTTP.start(uri.hostname, uri.port, use_ssl: true) do |http|\n  http.request(request)\nend\n\nputs response.body"
+          }
+        ]
+      }
+    },
+    "/omcoreapis/1.0.2/mp/pay": {
+      "post": {
+        "tags": ["I. API D'ENCAISEMENT ORANGE CAMEROUN"],
+        "summary": "Effectuer la requête de paiement",
+        "description": "Apres avoir effectué la requête permettant d'initier le paiement, vous devz effectuer la requête de paiement sur l'url `https://api-s1.orange.cm/omcoreapis/1.0.2/mp/pay` en renseignant le PayToken récupéré à l'étape précédente. Vous devez également renseigner le jeton de type Bearer dans l'en tête de la requête.\n\n<h2>Champs requis:</h2>\n<ul><li><span style='color:red'>Jeton d'authentification</span> (Ce jeton récupéré à l'étape 1 sera placé dans le Header)</li><li><span style='color:red'>X-AUTH-TOKEN</span> Il s'agit du même paramètre utilisé lors de l'initialisation du paiement.</li><li><span style='color:red'>channelUserMsisdn</span> Le numéro de téléphone associé à votre compte marchand, ce numéro vous sera communiqué après souscription</li> <li><span style='color:red'>pin</span> Le pin associé au numéro votre puce marchande. Ce paramètre vous sera également communiqué.</li> <li><span style='color:red'>notifUrl</span> L'URL où la notification sera envoyée lors du changement du statut de la transaction.</li> <li><span style='color:red'>amount</span> Le montant à payer par le client, le montant minimum est 10F (10). Les virgules ne sont pas autorisées.</li> <li><span style='color:red'>subscriberMsisdn</span> Le numéro du payeur, le numéro du payeur, l'indicatif n'est pas autorisé.</li> <li><span style='color:red'>orderId</span> L'identifiant de votre transaction. Ex: ref001</li> <li><span style='color:red'>description</span>Une courte description sur le paiement. Ex: PaiementFacture01</li>  <li><span style='color:red'>payToken</span>Le payToken récupéré a l'étape précédente.</li> </ul><img src='https://www.paynote.africa/wp-content/uploads/2025/10/Screenshot-2025-10-22-at-1.51.36-PM.png'/>\n<span style=\"font-family: 'Beretta', sans-serif; font-size: 14.3px; line-height: 1.6;\">Pour effectuer un test directement sur ce site, veuillez rempalcer les valeurs de la partie exemple ci-dessous par ceux qui vous ont été transmis ensuite cliquez sur <b>TRY</b>.</span>",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          {
+            "name": "X-AUTH-TOKEN",
+            "in": "header",
+            "description": "X-AUTH-TOKEN fourni par Paynote.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "WU5PVXXXXX"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/RefundRequestMP" },
+              "examples": {
+                "status": {
+                  "summary": "Requête test",
+                  "value": {
+                    "notifUrl": "https://monsite.com/notification",
+                    "channelUserMsisdn": "channelUserMsisdn",
+                    "amount": "amount",
+                    "subscriberMsisdn": "subscriberMsisdn",
+                    "pin": "pin",
+                    "orderId": "orderId",
+                    "description": "Commande 12345",
+                    "payToken": "MP2510XXX4"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Statut retourné",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "success": {
+                    "summary": "Paiement validé",
+                    "value": {
+                      "message": "Merchant payment successfully initiated",
+                      "data": {
+                          "id": 396258837,
+                          "subscriberMsisdn": "69XXXXXXX",
+                          "amount": 10,
+                          "payToken": "MP25102XXXXXXXX",
+                          "txnmode": "OMAPI#MP#39XX",
+                          "channelUserMsisdn": "69XXXXXXX",
+                          "status": "PENDING",
+                          "txnid": "MP251022.1338.XX",
+                          "inittxnmessage": "Paiement e la clientele done.The devrez confirmer le paiement en saisissant son code PIN et vous recevrez alors un SMS. Merci dutiliser des services Orange Money.",
+                          "inittxnstatus": "200",
+                          "confirmtxnmessage": null,
+                          "confirmtxnstatus": null,
+                          "orderId": "order1234",
+                          "notifUrl": "https://monsite.com/notification",
+                          "description": "Commande 12345",
+                          "createtime": "1761137595"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples" :[
+          {
+            "lang": "curl",
+            "label" :"cURL",
+            "source": "curl --location 'https://api-s1.orange.cm/omcoreapis/1.0.2/mp/pay' --header 'X-AUTH-TOKEN: WU5PVEVIRUFEOllOT1RFSEVBRDIwMjA=' --header 'Content-Type: application/json' --header 'Authorization: Bearer 2e537751-206b-3e12-97b9-0d465efb73e9' --data '{\"notifUrl\": \"https://monsite.com/notification\",\"channelUserMsisdn\": \"channelUserMsisdn\",\"amount\": \"amount\",\"subscriberMsisdn\": \"subscriberMsisdn\",\"pin\": \"pin\",\"orderId\": \"orderId\",\"description\": \"Commande 12345\",\"payToken\": \"MP2510XXX4\"}'"
+          },
+          {
+            "lang": "Java",
+            "source": "import java.io.OutputStream;\nimport java.net.HttpURLConnection;\nimport java.net.URL;\n\npublic class Main {\n  public static void main(String[] args) throws Exception {\n    URL url = new URL(\"https://api-s1.orange.cm/omcoreapis/1.0.2/mp/pay\");\n    HttpURLConnection conn = (HttpURLConnection) url.openConnection();\n    conn.setRequestMethod(\"POST\");\n    conn.setRequestProperty(\"X-AUTH-TOKEN\", \"WU5PVEVIRUFEOllOT1RFSEVBRDIwMjA=\");\n    conn.setRequestProperty(\"Authorization\", \"Bearer 2e537751-206b-3e12-97b9-0d465efb73e9\");\n    conn.setRequestProperty(\"Content-Type\", \"application/json\");\n    conn.setDoOutput(true);\n\n    String jsonInput = \"{\\n\" +\n      \"  \\\"notifUrl\\\": \\\"https://monsite.com/notification\\\",\\n\" +\n      \"  \\\"channelUserMsisdn\\\": \\\"channelUserMsisdn\\\",\\n\" +\n      \"  \\\"amount\\\": \\\"amount\\\",\\n\" +\n      \"  \\\"subscriberMsisdn\\\": \\\"subscriberMsisdn\\\",\\n\" +\n      \"  \\\"pin\\\": \\\"pin\\\",\\n\" +\n      \"  \\\"orderId\\\": \\\"orderId\\\",\\n\" +\n      \"  \\\"description\\\": \\\"Commande 12345\\\",\\n\" +\n      \"  \\\"payToken\\\": \\\"MP2510XXX4\\\"\\n\" +\n      \"}\";\n\n    try (OutputStream os = conn.getOutputStream()) {\n      byte[] input = jsonInput.getBytes(\"utf-8\");\n      os.write(input, 0, input.length);\n    }\n\n    System.out.println(conn.getResponseCode());\n  }\n}"
+          },
+          {
+            "lang": "Python",
+            "source": "import requests\n\nurl = 'https://api-s1.orange.cm/omcoreapis/1.0.2/mp/pay'\nheaders = {\n  'X-AUTH-TOKEN': 'WU5PVEVIRUFEOllOT1RFSEVBRDIwMjA=',\n  'Authorization': 'Bearer 2e537751-206b-3e12-97b9-0d465efb73e9',\n  'Content-Type': 'application/json'\n}\ndata = {\n  'notifUrl': 'https://monsite.com/notification',\n  'channelUserMsisdn': 'channelUserMsisdn',\n  'amount': 'amount',\n  'subscriberMsisdn': 'subscriberMsisdn',\n  'pin': 'pin',\n  'orderId': 'orderId',\n  'description': 'Commande 12345',\n  'payToken': 'MP2510XXX4'\n}\n\nresponse = requests.post(url, headers=headers, json=data)\nprint(response.status_code)\nprint(response.text)"
+          },
+          {
+            "lang": "PHP",
+            "source": "<?php\n$url = 'https://api-s1.orange.cm/omcoreapis/1.0.2/mp/pay';\n$headers = [\n  'X-AUTH-TOKEN: WU5PVEVIRUFEOllOT1RFSEVBRDIwMjA=',\n  'Authorization: Bearer 2e537751-206b-3e12-97b9-0d465efb73e9',\n  'Content-Type: application/json'\n];\n\n$data = [\n  'notifUrl' => 'https://monsite.com/notification',\n  'channelUserMsisdn' => 'channelUserMsisdn',\n  'amount' => 'amount',\n  'subscriberMsisdn' => 'subscriberMsisdn',\n  'pin' => 'pin',\n  'orderId' => 'orderId',\n  'description' => 'Commande 12345',\n  'payToken' => 'MP2510XXX4'\n];\n\n$ch = curl_init($url);\ncurl_setopt($ch, CURLOPT_HTTPHEADER, $headers);\ncurl_setopt($ch, CURLOPT_POST, 1);\ncurl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));\ncurl_setopt($ch, CURLOPT_RETURNTRANSFER, true);\n$response = curl_exec($ch);\ncurl_close($ch);\n\necho $response;\n?>"
+          },
+          {
+            "lang": "Go",
+            "source": "package main\n\nimport (\n  \"bytes\"\n  \"fmt\"\n  \"net/http\"\n)\n\nfunc main() {\n  url := \"https://api-s1.orange.cm/omcoreapis/1.0.2/mp/pay\"\n  payload := []byte(`{\n    \"notifUrl\": \"https://monsite.com/notification\",\n    \"channelUserMsisdn\": \"channelUserMsisdn\",\n    \"amount\": \"amount\",\n    \"subscriberMsisdn\": \"subscriberMsisdn\",\n    \"pin\": \"pin\",\n    \"orderId\": \"orderId\",\n    \"description\": \"Commande 12345\",\n    \"payToken\": \"MP2510XXX4\"\n  }`)\n\n  req, _ := http.NewRequest(\"POST\", url, bytes.NewBuffer(payload))\n  req.Header.Set(\"Content-Type\", \"application/json\")\n  req.Header.Set(\"X-AUTH-TOKEN\", \"WU5PVEVIRUFEOllOT1RFSEVBRDIwMjA=\")\n  req.Header.Set(\"Authorization\", \"Bearer 2e537751-206b-3e12-97b9-0d465efb73e9\")\n\n  res, _ := http.DefaultClient.Do(req)\n  fmt.Println(res.Status)\n}"
+          },
+          {
+            "lang": "Ruby",
+            "source": "require 'net/http'\nrequire 'json'\n\nurl = URI('https://api-s1.orange.cm/omcoreapis/1.0.2/mp/pay')\nhttp = Net::HTTP.new(url.host, url.port)\nhttp.use_ssl = true\n\nrequest = Net::HTTP::Post.new(url)\nrequest['X-AUTH-TOKEN'] = 'WU5PVEVIRUFEOllOT1RFSEVBRDIwMjA='\nrequest['Authorization'] = 'Bearer 2e537751-206b-3e12-97b9-0d465efb73e9'\nrequest['Content-Type'] = 'application/json'\n\nrequest.body = {\n  notifUrl: 'https://monsite.com/notification',\n  channelUserMsisdn: 'channelUserMsisdn',\n  amount: 'amount',\n  subscriberMsisdn: 'subscriberMsisdn',\n  pin: 'pin',\n  orderId: 'orderId',\n  description: 'Commande 12345',\n  payToken: 'MP2510XXX4'\n}.to_json\n\nresponse = http.request(request)\nputs response.read_body"
+          }
+        ]
+      }
+    },
+    "/webpayment#yoomee": {
+      "post": {
+        "tags": ["VII. API D'ENCAISEMENT Yoomee Cameroun"],
+        "summary": "Effectuer une requête de paiement",
+        "description": "Une fois que vous avez récupéré le jeton à l'étape 1, utilisez ce dernier dans votre requête de paiement sur l'URL `https://omapi.ynote.africa/prod/webpayment`.</br>Pour tester directement sur cette page, sélectionnez `https://omapi.ynote.africa/prod` dans le menu <b>API Servers</b>. N'utilisez `https://omapi-token.ynote.africa` que pour la récupération du token d'authentification.\n <h2> Champs requis:</h2>\n <ul><li><span style='color:red'>Jeton d'authentification</span> (Ce jeton récupéré à l'étape 1 sera placé dans le Header)</li> <li><span style='color:red'>customerkey</span> Votre clé client</li><li><span style='color:red'>customersecret</span> Votre clé secrète</li><li><span style='color:red'>subscriberMsisdn</span> Le numéro de téléphone du payeur Le numéro de téléphone associé au compte Yoomee de votre payeur</li><li><span style='color:red'>description</span>  Une courte description de votre paiement</li><li><span style='color:red'>amount</span> Le montant à payer, le montant minimal est de 100 FCFA</li><li><span style='color:red'>notifUrl</span> L'URL de notification du changement du statut de la transaction</li><li><span style='color:red'>PaymentMethod</span> La méthode de paiement à utiliser, ce paramètre doit avoir pour valeur `YOOMEE_CMR`</li></ul>\n\n![Exemple Screenshot](https://www.paynote.africa/wp-content/uploads/2026/01/Screenshot-2026-01-17-at-10.05.10-PM.png)\n<h2>Note</h2><span style=\"font-family: 'Beretta', sans-serif; font-size: 14px; line-height: 1.6;\">L'API vous enverra une réponse contenant un paramètre <b>MessageId</b> vous permettra plus tard de retrouver le statut de votre transaction à tout moment. Ci-dessous les exemples de requêtes dans quelques langages de programmation suivi d'un exemple de réponse de l'API:</span> </br> \n<span style=\"font-family: 'Beretta', sans-serif; font-size: 14.3px; line-height: 1.6;\">Pour effectuer un test directement sur ce site, veuillez rempalcer les valeurs de la partie exemple ci-dessous par ceux qui vous ont été transmis ensuite cliquez sur <b>TRY</b>.</span>",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/PaymentRequestYoomee" },
+              "example": {
+                "API_MUT": {
+                  "customerkey": "customerkey",
+                  "customersecret": "customersecret",
+                  "subscriberMsisdn": "692XXXXXX",
+                  "description": "Paiement test",
+                  "amount": "100",
+                  "notifUrl": "https://monsite.com/notification",
+                  "PaiementMethod": "YOOMEE_CMR"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Réponse avec succès",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "succès": {
+                    "summary": "Réponse OK",
+                    "value": {
+                      "ErrorCode": "200",
+                      "body": "Pay Request Accepted",
+                      "ErrorMessage": "",
+                      "data": {
+                        "status": "PENDING"
+                      },
+                      "parameters": {
+                          "operation": "collection Yoomee",
+                          "MessageId": "xxx-e046-434a-b5bd-xxx",
+                          "currency": "XAF",
+                          "amount": "100",
+                          "subscriberMsisdn": "692XXXXXX",
+                          "notifUrl": "https://monsite.com/notification"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "curl",
+            "label": "cURL",
+            "source": "curl --location 'https://omapi.ynote.africa/prod/webpayment' --header 'Content-Type: application/json' --header 'Authorization: Bearer Token-XXX' --data '{\"API_MUT\":{\"customerkey\": \"customerkey\",\"customersecret\": \"customersecret\",\"subscriberMsisdn\": \"69000xxxx\",\"description\":\"paiemt test\",\"amount\": \"100\", \"notifUrl\": \"https://monsite.com/notification\", \"PaiementMethod\":\"YOOMEE_CMR\"}}'"
+          },
+          {
+            "lang": "php",
+            "label": "PHP",
+            "source": "<?php\n$ch = curl_init('https://omapi.ynote.africa/prod/webpayment');\ncurl_setopt($ch, CURLOPT_HTTPHEADER, ['Authorization: Bearer TOKEN-XXX','Content-Type: application/json']);\ncurl_setopt($ch, CURLOPT_POST, 1);\ncurl_setopt($ch, CURLOPT_POSTFIELDS, json_encode(['API_MUT'=>['customerkey'=>'customerkey','customersecret'=>'customersecret','subscriberMsisdn'=>'692xxxxx','description'=>'paiement test','amount'=>'100','notifUrl'=>'https://monsite.com/notification','PaiementMethod'=>'YOOMEE_CMR']]));\n$response = curl_exec($ch);\ncurl_close($ch);\n?>"
+          },
+          {
+            "lang": "python",
+            "label": "Python",
+            "source": "import requests\nurl = 'https://omapi.ynote.africa/prod/webpayment'\nheaders = {'Authorization':'Bearer TOKEN-XXX','Content-Type':'application/json'}\npayload = {'API_MUT':{'customerkey':'customerkey','customersecret':'customersecret','subscriberMsisdn':'692xxxxxx','description':'paiement test','amount':'100','notifUrl':'https://monsite.com/notification','PaiementMethod':'YOOMEE_CMR'}}\nresponse = requests.post(url, headers=headers, json=payload)\nprint(response.json())"
+          },
+          {
+            "lang": "ruby",
+            "label": "Ruby",
+            "source": "require 'net/http'\nrequire 'json'\nuri = URI('https://omapi.ynote.africa/prod/webpayment')\nreq = Net::HTTP::Post.new(uri, {'Authorization'=>'Bearer TOKEN-XXX','Content-Type'=>'application/json'})\nreq.body = {API_MUT:{customerkey:'customerkey',customersecret:'customersecret',subscriberMsisdn:'692xxxxxx',description:'paiement test',amount:'100',notifUrl:'https://monsite.com/notification',PaiementMethod:'YOOMEE_CMR'}}.to_json\nres = Net::HTTP.start(uri.hostname, uri.port, use_ssl: true){|http| http.request(req)}\nputs res.body"
+          },
+          {
+            "lang": "java",
+            "label": "Java",
+            "source": "import java.net.http.*;\nimport java.net.URI;\nHttpClient client = HttpClient.newHttpClient();\nHttpRequest request = HttpRequest.newBuilder()\n  .uri(URI.create(\"https://omapi.ynote.africa/prod/webpayment\"))\n  .header(\"Authorization\",\"Bearer TOKEN-XXX\")\n  .header(\"Content-Type\",\"application/json\")\n  .POST(HttpRequest.BodyPublishers.ofString(\"{\\\"API_MUT\\\":{\\\"customerkey\\\":\\\"customerkey\\\",\\\"customersecret\\\":\\\"customersecret\\\",\\\"subscriberMsisdn\\\":\\\"692xxxxxx\\\",\\\"description\\\":\\\"paiement test\\\",\\\"amount\\\":\\\"100\\\",\\\"notifUrl\\\":\\\"https://monsite.com/notification\\\",\\\"PaiementMethod\\\":\\\"YOOMEE_CMR\\\"}}\"))\n  .build();\nHttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());\nSystem.out.println(response.body());"
+          },
+          {
+            "lang": "go",
+            "label": "Go",
+            "source": "package main\nimport (\"bytes\";\"fmt\";\"net/http\";\"io/ioutil\")\nfunc main(){\n url := \"https://omapi.ynote.africa/prod/webpayment\"\n jsonData := []byte(`{\"API_MUT\":{\"customerkey\":\"customerkey\",\"customersecret\":\"customersecret\",\"subscriberMsisdn\":\"692xxxxxx\",\"description\":\"paiement test\",\"amount\":\"100\",\"notifUrl\":\"https://monsite.com/notification\",\"PaiementMethod\":\"YOOMEE_CMR\"}}`)\n req,_ := http.NewRequest(\"POST\",url,bytes.NewBuffer(jsonData))\n req.Header.Set(\"Authorization\",\"Bearer TOKEN-XXX\")\n req.Header.Set(\"Content-Type\",\"application/json\")\n client := &http.Client{}\n resp,_ := client.Do(req)\n defer resp.Body.Close()\n body,_ := ioutil.ReadAll(resp.Body)\n fmt.Println(string(body))\n}"
+          }
+        ]
+      }
+    },
+    "/webpayment": {
+      "post": {
+        "tags": ["VI. API D'ENCAISEMENT M2U Cameroun"],
+        "summary": "Effectuer une requête de paiement",
+        "description": "Une fois que vous avez récupéré le jeton à l'étape 1, utilisez ce dernier dans votre requête de paiement sur l'URL `https://omapi.ynote.africa/prod/webpayment`.</br>Pour tester directement sur cette page, sélectionnez `https://omapi.ynote.africa/prod` dans le menu <b>API Servers</b>. N'utilisez `https://omapi-token.ynote.africa` que pour la récupération du token d'authentification.\n <h2> Champs requis:</h2>\n <ul><li><span style='color:red'>Jeton d'authentification</span> (Ce jeton récupéré à l'étape 1 sera placé dans le Header)</li> <li><span style='color:red'>customerkey</span> (Votre clé client)</li><li><span style='color:red'>customersecret</span> (Votre clé secrète)</li><li><span style='color:red'>subscriberMsisdn</span> (Le numéro du payeur, celui avec lequel le compte M2U a été crée)</li><li><span style='color:red'>otp</span> (Le code d'authorisation du payeur. Celui-ci doit être communiqué de manière discrète par le payeur)</li><li><span style='color:red'>amount</span> (Le montant à payer)</li><li><span style='color:red'>description</span> (Une courte description de votre paiement)</li><li><span style='color:red'>notifUrl</span> (L'URL de notification du changement du statut de la transaction)</li><li><span style='color:red'>PaymentMethod</span> (La méthode de paiement à utiliser, ce paramètre doit avoir pour valeur `M2U_CMR`)</li></ul>\n\n![Exemple Screenshot](https://www.paynote.africa/wp-content/uploads/2026/01/Screenshot-2026-01-23-at-6.35.02-PM.png)\n<h2>Note</h2><span style=\"font-family: 'Beretta', sans-serif; font-size: 14px; line-height: 1.6;\">L'API vous enverra une réponse contenant un paramètre <b>MessageId</b> vous permettra plus tard de retrouver le statut de votre transaction à tout moment. Ci-dessous les exemples de requêtes dans quelques langages de programmation suivi d'un exemple de réponse de l'API:</span> </br> \n<span style=\"font-family: 'Beretta', sans-serif; font-size: 14.3px; line-height: 1.6;\">Pour effectuer un test directement sur ce site, veuillez rempalcer les valeurs de la partie exemple ci-dessous par ceux qui vous ont été transmis ensuite cliquez sur <b>TRY</b>.</span>",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/PaymentRequest" },
+              "example": {
+                "API_MUT": {
+                  "customerkey": "customerkey",
+                  "customersecret": "customersecret",
+                  "subscriberMsisdn": "692XXXXXX",
+                  "description": "paiement test",
+                  "otp": "000000",
+                  "amount": "10",
+                  "notifUrl": "notif_url",
+                  "PaiementMethod": "M2U_CMR"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Réponse avec succès",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "succès": {
+                    "summary": "Réponse OK",
+                    "value": {
+                      "StatusCode": "200",
+                      "body": "Pay Request Accepted",
+                      "MessageId": "xxx-e046-434a-b5bd-xxx",
+                      "parameters": {
+                          "amount": "500",
+                          "customersecret": "XXXX",
+                          "payment_method": "M2U_CMR",
+                          "subscriberMsisdn": "692XXXXXX",
+                          "notif_url": "https://monsite.com/notification",
+                          "customerkey": "XXXX",
+                          "message_id": "xxx-e046-434a-b5bd-xxx"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "curl",
+            "label": "cURL",
+            "source": "curl -X POST 'https://omapi.ynote.africa/prod/webpayment' -H 'Authorization: Bearer TOKEN-XXX' -H 'Content-Type: application/json' -d '{\"API_MUT\":{\"customerkey\":\"customerkey\",\"customersecret\":\"customersecret\",\"subscriberMsisdn\":\"692XXXXXX\",\"otp\":\"000000\",\"description\":\"paiement test\",\"amount\":\"10\",\"notifUrl\":\"notif_url\",\"PaiementMethod\":\"M2U_CMR\"}}'"
+          },
+          {
+            "lang": "php",
+            "label": "PHP",
+            "source": "<?php\n$ch = curl_init('https://omapi.ynote.africa/prod/webpayment');\ncurl_setopt($ch, CURLOPT_HTTPHEADER, ['Authorization: Bearer TOKEN-XXX','Content-Type: application/json']);\ncurl_setopt($ch, CURLOPT_POST, 1);\ncurl_setopt($ch, CURLOPT_POSTFIELDS, json_encode(['API_MUT'=>['customerkey'=>'customerkey','customersecret'=>'customersecret','subscriberMsisdn'=>'692XXXXXX','otp'=>'000000','description'=>'paiement test','amount'=>'10','notifUrl'=>'notif_url','PaiementMethod'=>'M2U_CMR']]));\n$response = curl_exec($ch);\ncurl_close($ch);\n?>"
+          },
+          {
+            "lang": "python",
+            "label": "Python",
+            "source": "import requests\nurl = 'https://omapi.ynote.africa/prod/webpayment'\nheaders = {'Authorization':'Bearer TOKEN-XXX','Content-Type':'application/json'}\npayload = {'API_MUT':{'customerkey':'customerkey','customersecret':'customersecret','subscriberMsisdn':'692XXXXXX','otp':'000000','description':'paiement test','amount':'10','notifUrl':'notif_url','PaiementMethod':'M2U_CMR'}}\nresponse = requests.post(url, headers=headers, json=payload)\nprint(response.json())"
+          },
+          {
+            "lang": "ruby",
+            "label": "Ruby",
+            "source": "require 'net/http'\nrequire 'json'\nuri = URI('https://omapi.ynote.africa/prod/webpayment')\nreq = Net::HTTP::Post.new(uri, {'Authorization'=>'Bearer TOKEN-XXX','Content-Type'=>'application/json'})\nreq.body = {API_MUT:{customerkey:'customerkey',customersecret:'customersecret',subscriberMsisdn:'692XXXXXX',otp:'000000',description:'paiement test',amount:'10',notifUrl:'notif_url',PaiementMethod:'M2U_CMR'}}.to_json\nres = Net::HTTP.start(uri.hostname, uri.port, use_ssl: true){|http| http.request(req)}\nputs res.body"
+          },
+          {
+            "lang": "java",
+            "label": "Java",
+            "source": "import java.net.http.*;\nimport java.net.URI;\nHttpClient client = HttpClient.newHttpClient();\nHttpRequest request = HttpRequest.newBuilder()\n  .uri(URI.create(\"https://omapi.ynote.africa/prod/webpayment\"))\n  .header(\"Authorization\",\"Bearer TOKEN-XXX\")\n  .header(\"Content-Type\",\"application/json\")\n  .POST(HttpRequest.BodyPublishers.ofString(\"{\\\"API_MUT\\\":{\\\"customerkey\\\":\\\"customerkey\\\",\\\"customersecret\\\":\\\"customersecret\\\",\\\"subscriberMsisdn\\\":\\\"692XXXXXX\\\",\\\"otp\\\":\\\"000000\\\",\\\"description\\\":\\\"paiement test\\\",\\\"amount\\\":\\\"10\\\",\\\"notifUrl\\\":\\\"notif_url\\\",\\\"PaiementMethod\\\":\\\"M2U_CMR\\\"}}\"))\n  .build();\nHttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());\nSystem.out.println(response.body());"
+          },
+          {
+            "lang": "go",
+            "label": "Go",
+            "source": "package main\nimport (\"bytes\";\"fmt\";\"net/http\";\"io/ioutil\")\nfunc main(){\n url := \"https://omapi.ynote.africa/prod/webpayment\"\n jsonData := []byte(`{\"API_MUT\":{\"customerkey\":\"customerkey\",\"customersecret\":\"customersecret\",\"subscriberMsisdn\":\"692XXXXXX\",\"otp\":\"000000\",\"description\":\"paiement test\",\"amount\":\"10\",\"notifUrl\":\"notif_url\",\"PaiementMethod\":\"M2U_CMR\"}}`)\n req,_ := http.NewRequest(\"POST\",url,bytes.NewBuffer(jsonData))\n req.Header.Set(\"Authorization\",\"Bearer TOKEN-XXX\")\n req.Header.Set(\"Content-Type\",\"application/json\")\n client := &http.Client{}\n resp,_ := client.Do(req)\n defer resp.Body.Close()\n body,_ := ioutil.ReadAll(resp.Body)\n fmt.Println(string(body))\n}"
+          }
+        ]
+      }
+    },
+    "/webpayment#mtn": {
+      "post": {
+        "tags": ["IV. API D'ENCAISEMENT MTN CAMEROUN"],
+        "summary": "Effectuer une requête de paiement MTN",
+        "description": "Une fois que vous avez récupéré le jeton à l'étape 1, utilisez ce dernier dans votre requête de paiement sur l'URL `https://omapi.ynote.africa/prod/webpayment`.</br>Pour tester directement sur cette page, sélectionnez `https://omapi.ynote.africa/prod` dans le menu <b>API Servers</b>. N'utilisez `https://omapi-token.ynote.africa` que pour la récupération du token d'authentification.\n <h2> Champs requis:</h2>\n <ul><li><span style='color:red'>Jeton d'authentification</span> (Ce jeton récupéré à l'étape 1 sera placé dans le Header)</li> <li><span style='color:red'>customerkey</span> (Votre clé client)</li><li><span style='color:red'>customersecret</span> (Votre clé secrète)</li><li><span style='color:red'>subscriberMsisdn</span> (Le numéro MTN de celui qui recevra la notification de paiement)</li><li><span style='color:red'>order_id</span> (L'identifiant unique de votre transaction. ex.: Trans01)</li><li><span style='color:red'>amount</span> (Le montant à payer)</li> <li><span style='color:red'>description</span> (Une courte description sur le paiement (la raison du paiement))</li> <li><span style='color:red'>notifUrl</span> (L'URL de notification du changement du statut de la transaction)</li><li><span style='color:red'>PaymentMethod</span> (La méthode de paiement à utiliser, ce paramètre doit avoir pour valeur `MTN_CMR`)</li></ul>\n\n![Exemple Screenshot](https://www.paynote.africa/wp-content/uploads/2025/10/Screenshot-2025-10-20-at-10.29.31-AM.png)\n<h2>Note</h2><span style=\"font-family: 'Beretta', sans-serif; font-size: 14px; line-height: 1.6;\">L'API vous enverra une réponse contenant un paramètre <b>MessageId</b> vous permettra plus tard de retrouver le statut de votre transaction à tout moment. Ci-dessous les exemples de requêtes dans quelques langages de programmation suivi d'un exemple de réponse de l'API:</span> </br> \n<span style=\"font-family: 'Beretta', sans-serif; font-size: 14.3px; line-height: 1.6;\">Pour effectuer un test directement sur ce site, veuillez rempalcer les valeurs de la partie exemple ci-dessous par ceux qui vous ont été transmis ensuite cliquez sur <b>TRY</b>.</span>",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/PaymentRequestMTN" },
+              "example": {
+                "API_MUT": {
+                  "notifUrl": "https://monsite.com/notification",
+                  "subscriberMsisdn": "679XXXXXX",
+                  "description": "Test",
+                  "amount": "100",
+                  "order_id": "Id123",
+                  "customerkey":"customerkey",
+                  "customersecret":"customersecret",
+                  "PaiementMethod": "MTN_CMR"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Réponse avec succès",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "succès": {
+                    "summary": "Réponse OK",
+                    "value": {
+                      "ErrorCode": 200,
+                      "body": "Pay Request Accepted",
+                      "ErrorMessage": "",
+                      "parameters": {
+                          "operation": "collection Mtn",
+                          "MessageId": "f2a113eb-xxx-40b8-xx-xxx",
+                          "currency": "XAF",
+                          "amount": "100",
+                          "subscriberMsisdn": "679XXXXXX",
+                          "order_id": "Id123",
+                          "notifUrl": "https://monsite.com/notification"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "curl",
+            "label": "cURL",
+            "source": "curl --location 'https://omapi.ynote.africa/prod/webpayment' --header 'Content-Type: application/json' --header 'Authorization: Bearer eyJhbGciOiJSU...' --data '{\"API_MUT\": {\"notifUrl\": \"https://monsite.com/notification\",\"subscriberMsisdn\": \"678XXXXXX\", \"description\": \"XXXXX\", \"amount\": \"100\",\"order_id\": \"XXXXX\", \"customerkey\":\"customerkey\",\"customersecret\":\"customersecret\",\"PaiementMethod\": \"MTN_CMR\" }}'"
+          },
+          {
+            "lang": "Python",
+            "source": "import http.client\nimport json\n\nconn = http.client.HTTPSConnection(\"omapi.ynote.africa\")\npayload = json.dumps({\n    \"API_MUT\": {\n        \"notifUrl\": \"https://monsite.com/notification\",\n        \"subscriberMsisdn\": \"678XXXXXX\",\n        \"description\": \"XXXXX\",\n        \"amount\": \"100\",\n        \"order_id\": \"XXXXX\",\n        \"customerkey\": \"customerkey\",\n        \"customersecret\": \"customersecret\",\n        \"PaiementMethod\": \"MTN_CMR\"\n    }\n})\nheaders = {\n    'Content-Type': 'application/json',\n    'Authorization': 'Bearer eyJhbGciOiJSU...'\n}\nconn.request(\"POST\", \"/prod/webpayment\", payload, headers)\nres = conn.getresponse()\ndata = res.read()\nprint(data.decode(\"utf-8\"))"
+          },
+          {
+            "lang": "Go",
+            "source": "package main\n\nimport (\n    \"bytes\"\n    \"fmt\"\n    \"io/ioutil\"\n    \"net/http\"\n)\n\nfunc main() {\n    url := \"https://omapi.ynote.africa/prod/webpayment\"\n    var jsonStr = []byte(`{\n        \"API_MUT\": {\n            \"notifUrl\": \"https://monsite.com/notification\",\n            \"subscriberMsisdn\": \"678XXXXXX\",\n            \"description\": \"XXXXX\",\n            \"amount\": \"100\",\n            \"order_id\": \"XXXXX\",\n            \"customerkey\": \"customerkey\",\n            \"customersecret\": \"customersecret\",\n            \"PaiementMethod\": \"MTN_CMR\"\n        }\n    }`)\n    req, _ := http.NewRequest(\"POST\", url, bytes.NewBuffer(jsonStr))\n    req.Header.Set(\"Content-Type\", \"application/json\")\n    req.Header.Set(\"Authorization\", \"Bearer eyJhbGciOiJSU...\")\n\n    client := &http.Client{}\n    resp, err := client.Do(req)\n    if err != nil {\n        panic(err)\n    }\n    defer resp.Body.Close()\n    body, _ := ioutil.ReadAll(resp.Body)\n    fmt.Println(string(body))\n}"
+          },
+          {
+            "lang": "Java",
+            "source": "import java.io.OutputStream;\nimport java.net.HttpURLConnection;\nimport java.net.URL;\nimport java.nio.charset.StandardCharsets;\nimport java.util.Scanner;\n\npublic class Main {\n    public static void main(String[] args) throws Exception {\n        URL url = new URL(\"https://omapi.ynote.africa/prod/webpayment\");\n        HttpURLConnection conn = (HttpURLConnection) url.openConnection();\n        conn.setRequestMethod(\"POST\");\n        conn.setRequestProperty(\"Content-Type\", \"application/json\");\n        conn.setRequestProperty(\"Authorization\", \"Bearer eyJhbGciOiJSU...\");\n        conn.setDoOutput(true);\n\n        String jsonInput = \"{\\\"API_MUT\\\":{\\\"notifUrl\\\":\\\"https://monsite.com/notification\\\",\\\"subscriberMsisdn\\\":\\\"678XXXXXX\\\",\\\"description\\\":\\\"XXXXX\\\",\\\"amount\\\":\\\"100\\\",\\\"order_id\\\":\\\"XXXXX\\\",\\\"customerkey\\\":\\\"customerkey\\\",\\\"customersecret\\\":\\\"customersecret\\\",\\\"PaiementMethod\\\":\\\"MTN_CMR\\\"}}\";\n        try (OutputStream os = conn.getOutputStream()) {\n            byte[] input = jsonInput.getBytes(StandardCharsets.UTF_8);\n            os.write(input, 0, input.length);\n        }\n\n        Scanner sc = new Scanner(conn.getInputStream());\n        while (sc.hasNext()) {\n            System.out.println(sc.nextLine());\n        }\n        sc.close();\n    }\n}"
+          },
+          {
+            "lang": "PHP",
+            "source": "<?php\n\n$url = 'https://omapi.ynote.africa/prod/webpayment';\n$data = [\n    'API_MUT' => [\n        'notifUrl' => 'https://monsite.com/notification',\n        'subscriberMsisdn' => '678XXXXXX',\n        'description' => 'XXXXX',\n        'amount' => '100',\n        'order_id' => 'XXXXX',\n        'customerkey' => 'customerkey',\n        'customersecret' => 'customersecret',\n        'PaiementMethod' => 'MTN_CMR'\n    ]\n];\n\n$options = [\n    'http' => [\n        'header'  => [\n            'Content-Type: application/json',\n            'Authorization: Bearer eyJhbGciOiJSU...'\n        ],\n        'method'  => 'POST',\n        'content' => json_encode($data)\n    ]\n];\n\n$context  = stream_context_create($options);\n$result = file_get_contents($url, false, $context);\nif ($result === FALSE) { echo 'Erreur'; }\n\necho $result;\n?>"
+          },
+          {
+            "lang": "Ruby",
+            "source": "require 'net/http'\nrequire 'uri'\nrequire 'json'\n\nuri = URI.parse('https://omapi.ynote.africa/prod/webpayment')\nheader = {\n  'Content-Type' => 'application/json',\n  'Authorization' => 'Bearer eyJhbGciOiJSU...'\n}\nbody = {\n  API_MUT: {\n    notifUrl: 'https://monsite.com/notification',\n    subscriberMsisdn: '678XXXXXX',\n    description: 'XXXXX',\n    amount: '100',\n    order_id: 'XXXXX',\n    customerkey: 'customerkey',\n    customersecret: 'customersecret',\n    PaiementMethod: 'MTN_CMR'\n  }\n}\n\nhttp = Net::HTTP.new(uri.host, uri.port)\nhttp.use_ssl = true\nrequest = Net::HTTP::Post.new(uri.request_uri, header)\nrequest.body = body.to_json\nresponse = http.request(request)\nputs response.body"
+          }
+        ]
+      }
+    },
+    "/webpayment#om": {
+      "post": {
+        "tags": ["II. API MUTUALISEE ORANGE CAMEROUN"],
+        "summary": "Effectuer une requête de paiement Mutualisée Orange Cameroun",
+        "description": "Une fois que vous avez récupéré le jeton à l'étape 1, utilisez ce dernier dans votre requête de paiement sur l'URL `https://omapi.ynote.africa/prod/webpayment`.</br>Pour tester directement sur cette page, sélectionnez `https://omapi.ynote.africa/prod` dans le menu <b>API Servers</b>. N'utilisez `https://omapi-token.ynote.africa` que pour la récupération du token d'authentification.\n <h2> Champs requis:</h2>\n <ul><li><span style='color:red'>Jeton d'authentification</span> (Ce jeton récupéré à l'étape 1 sera placé dans le Header)</li> <li><span style='color:red'>customerkey</span> (Votre clé client)</li><li><span style='color:red'>customersecret</span> (Votre clé secrète)</li><li><span style='color:red'>subscriberMsisdn</span> (Le numéro Orange de celui qui recevra la notification de paiement)</li><li><span style='color:red'>order_id</span> (L'identifiant unique de votre transaction. ex.: T001)</li><li><span style='color:red'>amount</span> (Le montant à payer), les virgule ne sont pas autorisés et montant minimum est de 10F (10).</li> <li><span style='color:red'>description</span> (Une courte description sur le paiement ex.: Paiement Facture 001)</li> <li><span style='color:red'>notifUrl</span> (L'URL de notification du changement du statut de la transaction)</li><li><span style='color:red'>PaiementMethod</span> (La méthode de paiement à utiliser, ce paramètre doit avoir pour valeur `ORANGE_CMR`)</li></ul>\n\n![Exemple Screenshot](https://www.paynote.africa/wp-content/uploads/2025/10/Screenshot-2025-10-28-at-1.13.36-PM.png)\n<h2>Note</h2><span style=\"font-family: 'Beretta', sans-serif; font-size: 14px; line-height: 1.6;\">L'API vous enverra une réponse contenant un paramètre <b>MessageId</b> vous permettra plus tard de retrouver le statut de votre transaction à tout moment. Ci-dessous les exemples de requêtes dans quelques langages de programmation suivi d'un exemple de réponse de l'API:</span> </br> \n<span style=\"font-family: 'Beretta', sans-serif; font-size: 14.3px; line-height: 1.6;\">Pour effectuer un test directement sur ce site, veuillez rempalcer les valeurs de la partie exemple ci-dessous par ceux qui vous ont été transmis ensuite cliquez sur <b>TRY</b>.</span>",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/PaymentRequestOMMUT" },
+              "example": {
+                "API_MUT":{
+                    "customerkey": "customerkey",
+                    "customersecret": "customersecret",
+                    "order_id":"order_id",
+                    "amount": "10",
+                    "subscriberMsisdn":"subscriberMsisdn",
+                    "description":"description",
+                    "notifUrl": "https://monsite.com/notification",
+                    "PaiementMethod":"ORANGE_CMR"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Réponse avec succès",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "succès": {
+                    "summary": "Réponse OK",
+                    "value": {
+                      "StatusCode": 200,
+                      "body": "Pay Request Accepted",
+                      "ErrorMessage": "",
+                      "parameters": {
+                          "operation": "OM_CMR collection ussd-mut",
+                          "MessageId": "MP25XXXXX",
+                          "currency": "XAF",
+                          "amount": "10",
+                          "subscriberMsisdn": "692XXXXXX",
+                          "order_id": "order_test",
+                          "notifUrl": "https://monsite.com/notification"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "curl",
+            "label": "cURL",
+            "source": "curl --location 'https://omapi.ynote.africa/dev/webpayment' --header 'Content-Type: application/json' --header 'Authorization: Bearer HZBuzj17sMpmrC...' --data '{\"API_MUT\":{\"customerkey\": \"customerkey\",\"customersecret\": \"customersecret\",\"order_id\":\"order_id\",\"amount\": \"10\",\"subscriberMsisdn\":\"subscriberMsisdn\",\"description\":\"description\",\"notifUrl\": \"https://monsite.com/notification\",\"PaiementMethod\":\"ORANGE_CMR\"}}'"
+          },
+          {
+            "lang": "Java",
+            "source": "import java.io.OutputStream;\nimport java.net.HttpURLConnection;\nimport java.net.URL;\n\npublic class Main {\n  public static void main(String[] args) throws Exception {\n    URL url = new URL(\"https://omapi.ynote.africa/dev/webpayment\");\n    HttpURLConnection conn = (HttpURLConnection) url.openConnection();\n    conn.setRequestMethod(\"POST\");\n    conn.setRequestProperty(\"Content-Type\", \"application/json\");\n    conn.setRequestProperty(\"Authorization\", \"Bearer eyJhbGciOi...\");\n    conn.setDoOutput(true);\n\n    String jsonInput = \"{\\\"API_MUT\\\":{\\\"customerkey\\\":\\\"customerkey\\\",\\\"customersecret\\\":\\\"customersecret\\\",\\\"order_id\\\":\\\"order_id\\\",\\\"amount\\\":\\\"10\\\",\\\"subscriberMsisdn\\\":\\\"subscriberMsisdn\\\",\\\"description\\\":\\\"description\\\",\\\"notifUrl\\\":\\\"https://monsite.com/notification\\\",\\\"PaiementMethod\\\":\\\"ORANGE_CMR\\\"}}\";\n    try(OutputStream os = conn.getOutputStream()) {\n      os.write(jsonInput.getBytes(\"utf-8\"));\n    }\n\n    int responseCode = conn.getResponseCode();\n    System.out.println(\"Response Code: \" + responseCode);\n  }\n}"
+          },
+          {
+            "lang": "Python",
+            "source": "import requests\n\nurl = 'https://omapi.ynote.africa/dev/webpayment'\nheaders = {\n    'Content-Type': 'application/json',\n    'Authorization': 'Bearer eyJhbGciOi...'\n}\ndata = {\n    'API_MUT': {\n        'customerkey': 'customerkey',\n        'customersecret': 'customersecret',\n        'order_id': 'order_id',\n        'amount': '10',\n        'subscriberMsisdn': 'subscriberMsisdn',\n        'description': 'description',\n        'notifUrl': 'https://monsite.com/notification',\n        'PaiementMethod': 'ORANGE_CMR'\n    }\n}\n\nresponse = requests.post(url, headers=headers, json=data)\nprint(response.status_code)\nprint(response.text)"
+          },
+          {
+            "lang": "PHP",
+            "source": "<?php\n$curl = curl_init();\n\ncurl_setopt_array($curl, [\n  CURLOPT_URL => 'https://omapi.ynote.africa/dev/webpayment',\n  CURLOPT_RETURNTRANSFER => true,\n  CURLOPT_CUSTOMREQUEST => 'POST',\n  CURLOPT_HTTPHEADER => [\n    'Content-Type: application/json',\n    'Authorization: Bearer eyJhbGciOi...'\n  ],\n  CURLOPT_POSTFIELDS => json_encode([\n    'API_MUT' => [\n      'customerkey' => 'customerkey',\n      'customersecret' => 'customersecret',\n      'order_id' => 'order_id',\n      'amount' => '10',\n      'subscriberMsisdn' => 'subscriberMsisdn',\n      'description' => 'description',\n      'notifUrl' => 'https://monsite.com/notification',\n      'PaiementMethod' => 'ORANGE_CMR'\n    ]\n  ])\n]);\n\n$response = curl_exec($curl);\ncurl_close($curl);\necho $response;\n?>"
+          },
+          {
+            "lang": "Go",
+            "source": "package main\n\nimport (\n    \"bytes\"\n    \"fmt\"\n    \"net/http\"\n    \"io/ioutil\"\n)\n\nfunc main() {\n    url := \"https://omapi.ynote.africa/dev/webpayment\"\n    jsonData := []byte(`{\"API_MUT\":{\"customerkey\":\"customerkey\",\"customersecret\":\"customersecret\",\"order_id\":\"order_id\",\"amount\":\"10\",\"subscriberMsisdn\":\"subscriberMsisdn\",\"description\":\"description\",\"notifUrl\":\"https://monsite.com/notification\",\"PaiementMethod\":\"ORANGE_CMR\"}}`)\n\n    req, _ := http.NewRequest(\"POST\", url, bytes.NewBuffer(jsonData))\n    req.Header.Add(\"Content-Type\", \"application/json\")\n    req.Header.Add(\"Authorization\", \"Bearer eyJhbGciOi...\")\n\n    res, _ := http.DefaultClient.Do(req)\n    body, _ := ioutil.ReadAll(res.Body)\n\n    fmt.Println(res.Status)\n    fmt.Println(string(body))\n}"
+          },
+          {
+            "lang": "Ruby",
+            "source": "require 'net/http'\nrequire 'uri'\nrequire 'json'\n\nuri = URI('https://omapi.ynote.africa/dev/webpayment')\nrequest = Net::HTTP::Post.new(uri)\nrequest['Content-Type'] = 'application/json'\nrequest['Authorization'] = 'Bearer eyJhbGciOi...'\n\nbody = {\n  API_MUT: {\n    customerkey: 'customerkey',\n    customersecret: 'customersecret',\n    order_id: 'order_id',\n    amount: '10',\n    subscriberMsisdn: 'subscriberMsisdn',\n    description: 'description',\n    notifUrl: 'https://monsite.com/notification',\n    PaiementMethod: 'ORANGE_CMR'\n  }\n}.to_json\n\nrequest.body = body\n\nresponse = Net::HTTP.start(uri.hostname, uri.port, use_ssl: true) do |http|\n  http.request(request)\nend\n\nputs response.code\nputs response.body"
+          }
+        ]
+      }
+    },
+    "/webpayment/status": {
+      "post": {
+        "tags": ["VI. API D'ENCAISEMENT M2U Cameroun"],
+        "summary": "Vérifier le statut d'un paiement",
+        "description": "Afin de vérifier à tout moment le statut d'une transaction faite, vous devez récupérer de nouveau un jeton sur l'url `https://omapi-token.ynote.africa/oauth2/token`. Vous recevrez un jeton avec un durée de validité comme c'était le cas lorsqu'il s'agissait du paiement. Ensuite, faites un POTST sur l'URL `https://omapi.ynote.africa/prod/webpayment/status` en renseignant le jeton de type Bearer dans l'en tête de la requête.\n\n<h2>Champs requis:</h2>\n<ul><li><span style='color:red'>Jeton d'authentification</span> (Ce jeton récupéré à l'étape 1 sera placé dans le Header)</li><li><span style='color:red'>customerkey</span> (Votre clé client)</li> <li><span style='color:red'>customersecret</span> (Votre clé secrète)</li> <li><span style='color:red'>message_id</span> (L'Id de la transaction: récupérée depuis la réponse lors du post du l'URL d'encaisement)</li><li><span style='color:red'>payment_method</span> (La méthode de paiement: Ce paramètre doit avoir pour valeur `M2U_CMR`)</li></ul><img src='https://www.paynote.africa/wp-content/uploads/2025/09/Screenshot-2025-09-26-at-9.28.23-PM.png'/>\n<span style=\"font-family: 'Beretta', sans-serif; font-size: 14.3px; line-height: 1.6;\">Pour effectuer un test directement sur ce site, veuillez rempalcer les valeurs de la partie exemple ci-dessous par ceux qui vous ont été transmis ensuite cliquez sur <b>TRY</b>.</span>",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/PaymentStatusRequestYoomee" },
+              "examples": {
+                "status": {
+                  "summary": "Requête test",
+                  "value": {
+                      "customerkey": "xxxxxxxxx",
+                      "customersecret": "xxxxxxxxx",
+                      "message_id": "xxxxxxxxx",
+                      "payment_method": "M2U_CMR"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Statut retourné",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "success": {
+                    "summary": "Paiement validé",
+                    "value": {
+                      "StatusCode": "200",
+                      "body": "Pay Request Accepted",
+                      "MessageId": "xxx-e046-434a-b5bd-xxx",
+                      "parameters": {
+                          "amount": "500",
+                          "customersecret": "XXXX",
+                          "payment_method": "M2U_CMR",
+                          "subscriberMsisdn": "692XXXXXX",
+                          "notif_url": "https://monsite.com/notification",
+                          "customerkey": "XXXX",
+                          "message_id": "xxx-e046-434a-b5bd-xxx"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples" : [
+          {
+            "lang": "curl",
+            "label": "cURL",
+            "source": "curl --location 'https://omapi.ynote.africa/prod/webpayment/status' --header 'Content-Type: application/json' --header 'Authorization: Bearer eyJhbGciOiJSU..' --data '{\"customerkey\": \"customerkey\",\"customersecret\": \"customersecret\",\"message_id\": \"xx-4ec8-4135-xx-xx\",\"payment_method\": \"M2U_CMR\"}'"
+          },
+          {
+            "lang": "Python",
+            "source": "import http.client\nimport json\n\nconn = http.client.HTTPSConnection(\"omapi.ynote.africa\")\npayload = json.dumps({\n    \"customerkey\": \"customerkey\",\n    \"customersecret\": \"customersecret\",\n    \"message_id\": \"xx-4ec8-4135-xx-xx\",\n    \"payment_method\": \"M2U_CMR\"\n})\nheaders = {\n    'Content-Type': 'application/json',\n    'Authorization': 'Bearer eyJhbGciOiJSU...'\n}\nconn.request(\"POST\", \"/prod/webpayment/status\", payload, headers)\nres = conn.getresponse()\ndata = res.read()\nprint(data.decode(\"utf-8\"))"
+          },
+          {
+            "lang": "Go",
+            "source": "package main\n\nimport (\n    \"bytes\"\n    \"fmt\"\n    \"io/ioutil\"\n    \"net/http\"\n)\n\nfunc main() {\n    url := \"https://omapi.ynote.africa/prod/webpayment/status\"\n    var jsonStr = []byte(`{\n        \"customerkey\": \"customerkey\",\n        \"customersecret\": \"customersecret\",\n        \"message_id\": \"xx-4ec8-4135-xx-xx\",\n        \"payment_method\": \"M2U_CMR\"\n    }`)\n    req, _ := http.NewRequest(\"POST\", url, bytes.NewBuffer(jsonStr))\n    req.Header.Set(\"Content-Type\", \"application/json\")\n    req.Header.Set(\"Authorization\", \"Bearer eyJhbGciOiJSU...\")\n\n    client := &http.Client{}\n    resp, err := client.Do(req)\n    if err != nil {\n        panic(err)\n    }\n    defer resp.Body.Close()\n    body, _ := ioutil.ReadAll(resp.Body)\n    fmt.Println(string(body))\n}"
+          },
+          {
+            "lang": "Java",
+            "source": "import java.io.OutputStream;\nimport java.net.HttpURLConnection;\nimport java.net.URL;\nimport java.nio.charset.StandardCharsets;\nimport java.util.Scanner;\n\npublic class Main {\n    public static void main(String[] args) throws Exception {\n        URL url = new URL(\"https://omapi.ynote.africa/prod/webpayment/status\");\n        HttpURLConnection conn = (HttpURLConnection) url.openConnection();\n        conn.setRequestMethod(\"POST\");\n        conn.setRequestProperty(\"Content-Type\", \"application/json\");\n        conn.setRequestProperty(\"Authorization\", \"Bearer eyJhbGciOiJSU...\");\n        conn.setDoOutput(true);\n\n        String jsonInput = \"{\\\"customerkey\\\":\\\"customerkey\\\",\\\"customersecret\\\":\\\"customersecret\\\",\\\"message_id\\\":\\\"xx-4ec8-4135-xx-xx\\\",\\\"payment_method\\\":\\\"M2U_CMR\\\"}\";\n        try (OutputStream os = conn.getOutputStream()) {\n            byte[] input = jsonInput.getBytes(StandardCharsets.UTF_8);\n            os.write(input, 0, input.length);\n        }\n\n        Scanner sc = new Scanner(conn.getInputStream());\n        while (sc.hasNext()) {\n            System.out.println(sc.nextLine());\n        }\n        sc.close();\n    }\n}"
+          },
+          {
+            "lang": "PHP",
+            "source": "<?php\n\n$url = 'https://omapi.ynote.africa/prod/webpayment/status';\n$data = [\n    'customerkey' => 'customerkey',\n    'customersecret' => 'customersecret',\n    'message_id' => 'xx-4ec8-4135-xx-xx',\n    'payment_method' => 'M2U_CMR'\n];\n\n$options = [\n    'http' => [\n        'header'  => [\n            'Content-Type: application/json',\n            'Authorization: Bearer eyJhbGciOiJSU...'\n        ],\n        'method'  => 'POST',\n        'content' => json_encode($data)\n    ]\n];\n\n$context  = stream_context_create($options);\n$result = file_get_contents($url, false, $context);\nif ($result === FALSE) { echo 'Erreur'; }\n\necho $result;\n?>"
+          },
+          {
+            "lang": "Ruby",
+            "source": "require 'net/http'\nrequire 'uri'\nrequire 'json'\n\nuri = URI.parse('https://omapi.ynote.africa/prod/webpayment/status')\nheader = {\n  'Content-Type' => 'application/json',\n  'Authorization' => 'Bearer eyJhbGciOiJSU...'\n}\nbody = {\n  customerkey: 'customerkey',\n  customersecret: 'customersecret',\n  message_id: 'xx-4ec8-4135-xx-xx',\n  payment_method: 'M2U_CMR'\n}\n\nhttp = Net::HTTP.new(uri.host, uri.port)\nhttp.use_ssl = true\nrequest = Net::HTTP::Post.new(uri.request_uri, header)\nrequest.body = body.to_json\nresponse = http.request(request)\nputs response.body"
+          }
+        ]
+      }
+    },
+    "/webpayment/status#Yoomee": {
+      "post": {
+        "tags": ["VII. API D'ENCAISEMENT Yoomee Cameroun"],
+        "summary": "Vérifier le statut d'un paiement",
+        "description": "Afin de vérifier à tout moment le statut d'une transaction faite, vous devez récupérer de nouveau un jeton sur l'url `https://omapi-token.ynote.africa/oauth2/token`. Vous recevrez un jeton avec un durée de validité comme c'était le cas lorsqu'il s'agissait du paiement. Ensuite, faites un POTST sur l'URL `https://omapi.ynote.africa/prod/webpayment/status` en renseignant le jeton de type Bearer dans l'en tête de la requête.\n\n<h2>Champs requis:</h2>\n<ul><li><span style='color:red'>Jeton d'authentification</span> (Ce jeton récupéré à l'étape 1 sera placé dans le Header)</li><li><span style='color:red'>customerkey</span> (Votre clé client)</li> <li><span style='color:red'>customersecret</span> (Votre clé secrète)</li> <li><span style='color:red'>message_id</span> (L'Id de la transaction: récupérée depuis la réponse lors du post du l'URL d'encaisement)</li><li><span style='color:red'>payment_method</span> (La méthode de paiement: Ce paramètre doit avoir pour valeur `YOOMEE_CMR`)</li></ul><img src='https://www.paynote.africa/wp-content/uploads/2026/01/Screenshot-2026-01-18-at-5.41.44-PM.png'/>\n<span style=\"font-family: 'Beretta', sans-serif; font-size: 14.3px; line-height: 1.6;\">Pour effectuer un test directement sur ce site, veuillez rempalcer les valeurs de la partie exemple ci-dessous par ceux qui vous ont été transmis ensuite cliquez sur <b>TRY</b>.</span>",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/PaymentStatusRequestYoomee" },
+              "examples": {
+                "status": {
+                  "summary": "Requête test",
+                  "value": {
+                      "customerkey": "xxxxxxxxx",
+                      "customersecret": "xxxxxxxxx",
+                      "message_id": "xxxxxxxxx",
+                      "payment_method": "YOOMEE_CMR"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Statut retourné",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "success": {
+                    "summary": "Paiement validé",
+                    "value": {
+                      "ErrorCode": "200",
+                      "body": "Pay Request Accepted",
+                      "ErrorMessage": "",
+                      "data": {
+                        "status": "PENDING"
+                      },
+                      "parameters": {
+                          "operation": "collection Yoomee",
+                          "MessageId": "xxx-e046-434a-b5bd-xxx",
+                          "currency": "XAF",
+                          "amount": "100",
+                          "subscriberMsisdn": "692XXXXXX",
+                          "notifUrl": "https://monsite.com/notification"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples" : [
+          {
+            "lang": "curl",
+            "label": "cURL",
+            "source": "curl --location 'https://omapi.ynote.africa/prod/webpayment/status' --header 'Content-Type: application/json' --header 'Authorization: Bearer eyJhbGciOiJSU..' --data '{\"customerkey\": \"customerkey\",\"customersecret\": \"customersecret\",\"message_id\": \"xx-4ec8-4135-xx-xx\",\"payment_method\": \"YOOMEE_CMR\"}'"
+          },
+          {
+            "lang": "Python",
+            "source": "import http.client\nimport json\n\nconn = http.client.HTTPSConnection(\"omapi.ynote.africa\")\npayload = json.dumps({\n    \"customerkey\": \"customerkey\",\n    \"customersecret\": \"customersecret\",\n    \"message_id\": \"xx-4ec8-4135-xx-xx\",\n    \"payment_method\": \"YOOMEE_CMR\"\n})\nheaders = {\n    'Content-Type': 'application/json',\n    'Authorization': 'Bearer eyJhbGciOiJSU...'\n}\nconn.request(\"POST\", \"/prod/webpayment/status\", payload, headers)\nres = conn.getresponse()\ndata = res.read()\nprint(data.decode(\"utf-8\"))"
+          },
+          {
+            "lang": "Go",
+            "source": "package main\n\nimport (\n    \"bytes\"\n    \"fmt\"\n    \"io/ioutil\"\n    \"net/http\"\n)\n\nfunc main() {\n    url := \"https://omapi.ynote.africa/prod/webpayment/status\"\n    var jsonStr = []byte(`{\n        \"customerkey\": \"customerkey\",\n        \"customersecret\": \"customersecret\",\n        \"message_id\": \"xx-4ec8-4135-xx-xx\",\n        \"payment_method\": \"YOOMEE_CMR\"\n    }`)\n    req, _ := http.NewRequest(\"POST\", url, bytes.NewBuffer(jsonStr))\n    req.Header.Set(\"Content-Type\", \"application/json\")\n    req.Header.Set(\"Authorization\", \"Bearer eyJhbGciOiJSU...\")\n\n    client := &http.Client{}\n    resp, err := client.Do(req)\n    if err != nil {\n        panic(err)\n    }\n    defer resp.Body.Close()\n    body, _ := ioutil.ReadAll(resp.Body)\n    fmt.Println(string(body))\n}"
+          },
+          {
+            "lang": "Java",
+            "source": "import java.io.OutputStream;\nimport java.net.HttpURLConnection;\nimport java.net.URL;\nimport java.nio.charset.StandardCharsets;\nimport java.util.Scanner;\n\npublic class Main {\n    public static void main(String[] args) throws Exception {\n        URL url = new URL(\"https://omapi.ynote.africa/prod/webpayment/status\");\n        HttpURLConnection conn = (HttpURLConnection) url.openConnection();\n        conn.setRequestMethod(\"POST\");\n        conn.setRequestProperty(\"Content-Type\", \"application/json\");\n        conn.setRequestProperty(\"Authorization\", \"Bearer eyJhbGciOiJSU...\");\n        conn.setDoOutput(true);\n\n        String jsonInput = \"{\\\"customerkey\\\":\\\"customerkey\\\",\\\"customersecret\\\":\\\"customersecret\\\",\\\"message_id\\\":\\\"xx-4ec8-4135-xx-xx\\\",\\\"payment_method\\\":\\\"YOOMEE_CMR\\\"}\";\n        try (OutputStream os = conn.getOutputStream()) {\n            byte[] input = jsonInput.getBytes(StandardCharsets.UTF_8);\n            os.write(input, 0, input.length);\n        }\n\n        Scanner sc = new Scanner(conn.getInputStream());\n        while (sc.hasNext()) {\n            System.out.println(sc.nextLine());\n        }\n        sc.close();\n    }\n}"
+          },
+          {
+            "lang": "PHP",
+            "source": "<?php\n\n$url = 'https://omapi.ynote.africa/prod/webpayment/status';\n$data = [\n    'customerkey' => 'customerkey',\n    'customersecret' => 'customersecret',\n    'message_id' => 'xx-4ec8-4135-xx-xx',\n    'payment_method' => 'YOOMEE_CMR'\n];\n\n$options = [\n    'http' => [\n        'header'  => [\n            'Content-Type: application/json',\n            'Authorization: Bearer eyJhbGciOiJSU...'\n        ],\n        'method'  => 'POST',\n        'content' => json_encode($data)\n    ]\n];\n\n$context  = stream_context_create($options);\n$result = file_get_contents($url, false, $context);\nif ($result === FALSE) { echo 'Erreur'; }\n\necho $result;\n?>"
+          },
+          {
+            "lang": "Ruby",
+            "source": "require 'net/http'\nrequire 'uri'\nrequire 'json'\n\nuri = URI.parse('https://omapi.ynote.africa/prod/webpayment/status')\nheader = {\n  'Content-Type' => 'application/json',\n  'Authorization' => 'Bearer eyJhbGciOiJSU...'\n}\nbody = {\n  customerkey: 'customerkey',\n  customersecret: 'customersecret',\n  message_id: 'xx-4ec8-4135-xx-xx',\n  payment_method: 'YOOMEE_CMR'\n}\n\nhttp = Net::HTTP.new(uri.host, uri.port)\nhttp.use_ssl = true\nrequest = Net::HTTP::Post.new(uri.request_uri, header)\nrequest.body = body.to_json\nresponse = http.request(request)\nputs response.body"
+          }
+        ]
+      }
+    },
+    "/webpaymentmtn/status": {
+      "post": {
+        "tags": ["IV. API D'ENCAISEMENT MTN CAMEROUN"],
+        "summary": "Vérifier le statut du paiement",
+        "description": "Afin de vérifier à tout moment le statut d'une transaction faite, vous devez récupérer de nouveau un jeton sur l'url `https://omapi-token.ynote.africa/oauth2/token`. Vous recevrez un jeton avec un durée de validité comme c'était le cas lorsqu'il s'agissait du paiement. Ensuite, faites un POTST sur l'URL `https://omapi.ynote.africa/prod/webpaymentmtn/status` en renseignant le jeton de type Bearer dans l'en tête de la requête.\n\n<h2>Champs requis:</h2>\n<ul><li><span style='color:red'>Jeton d'authentification</span> (Ce jeton récupéré à l'étape 1 sera placé dans le Header)</li><li><span style='color:red'>customerkey</span> (Votre clé client)</li> <li><span style='color:red'>customersecret</span> (Votre clé secrète)</li> <li><span style='color:red'>message_id</span> (L'Id de la transaction: récupérée depuis la réponse lors du post du l'URL d'encaisement)</li></ul><img src='https://www.paynote.africa/wp-content/uploads/2025/10/Screenshot-2025-10-20-at-9.25.53-AM.png'/>\n<span style=\"font-family: 'Beretta', sans-serif; font-size: 14.3px; line-height: 1.6;\">Pour effectuer un test directement sur ce site, veuillez rempalcer les valeurs de la partie exemple ci-dessous par ceux qui vous ont été transmis ensuite cliquez sur <b>TRY</b>.</span>",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/PaymentStatusRequestMTN" },
+              "examples": {
+                "status": {
+                  "summary": "Requête test",
+                  "value": {
+                      "customerkey": "xxxxxxxxx",
+                      "customersecret": "xxxxxxxxx",
+                      "message_id": "xxxxxxxxx"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Statut retourné",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "success": {
+                    "summary": "Paiement validé",
+                    "value": {
+                      "ErrorCode": 200,
+                      "body": "Pay Request Accepted",
+                      "ErrorMessage": "",
+                      "parameters": {
+                          "operation": "collection Mtn",
+                          "MessageId": "f2a113eb-xxx-40b8-xx-xxx",
+                          "currency": "XAF",
+                          "amount": "100",
+                          "subscriberMsisdn": "678XXXXXX",
+                          "order_id": "XXXXX",
+                          "notifUrl": "https://monsite.com/notification"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples" :[
+          {
+            "lang": "curl",
+            "label" :"cURL",
+            "source": "curl --location 'https://omapi.ynote.africa/prod/webpaymentmtn/status' --header 'Content-Type: application/json' --header 'Authorization: Bearer XXXX-XXX' --data '{\"customersecret\":\"XXXX-XXX\",\"customerkey\":\"XXXXXX\",\"message_id\": \"XXX-XXX\"}'"
+          },
+          {
+            "lang": "Java",
+            "label": "Java",
+            "source": "import java.net.http.HttpClient;\nimport java.net.http.HttpRequest;\nimport java.net.http.HttpResponse;\nimport java.net.URI;\n\npublic class Main {\n    public static void main(String[] args) throws Exception {\n        String json = \"\"\"\n        {\n            \\\"customersecret\\\": \\\"XXXX-XXX\\\",\n            \\\"customerkey\\\": \\\"XXXXXX\\\",\n            \\\"message_id\\\": \\\"XXX-XXX\\\"\n        }\n        \"\"\";\n\n        HttpRequest request = HttpRequest.newBuilder()\n            .uri(URI.create(\"https://omapi.ynote.africa/prod/webpaymentmtn/status\"))\n            .header(\"Content-Type\", \"application/json\")\n            .header(\"Authorization\", \"Bearer XXXX-XXX\")\n            .POST(HttpRequest.BodyPublishers.ofString(json))\n            .build();\n\n        HttpClient client = HttpClient.newHttpClient();\n        HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());\n\n        System.out.println(response.body());\n    }\n}"
+          },
+          {
+            "lang": "Python",
+            "label": "Python",
+            "source": "import http.client\nimport json\n\nconn = http.client.HTTPSConnection('omapi.ynote.africa')\n\npayload = json.dumps({\n    'customersecret': 'XXXX-XXX',\n    'customerkey': 'XXXXXX',\n    'message_id': 'XXX-XXX'\n})\n\nheaders = {\n    'Content-Type': 'application/json',\n    'Authorization': 'Bearer XXXX-XXX'\n}\n\nconn.request('POST', '/prod/webpaymentmtn/status', payload, headers)\nres = conn.getresponse()\ndata = res.read()\n\nprint(data.decode('utf-8'))"
+          },
+          {
+            "lang": "Go",
+            "label": "Go",
+            "source": "package main\n\nimport (\n    \"bytes\"\n    \"fmt\"\n    \"io\"\n    \"net/http\"\n)\n\nfunc main() {\n    url := \"https://omapi.ynote.africa/prod/webpaymentmtn/status\"\n    payload := []byte(`{\n        \\\"customersecret\\\": \\\"XXXX-XXX\\\",\n        \\\"customerkey\\\": \\\"XXXXXX\\\",\n        \\\"message_id\\\": \\\"XXX-XXX\\\"\n    }`)\n\n    req, _ := http.NewRequest(\"POST\", url, bytes.NewBuffer(payload))\n    req.Header.Add(\"Content-Type\", \"application/json\")\n    req.Header.Add(\"Authorization\", \"Bearer XXXX-XXX\")\n\n    res, _ := http.DefaultClient.Do(req)\n    defer res.Body.Close()\n    body, _ := io.ReadAll(res.Body)\n\n    fmt.Println(string(body))\n}"
+          },
+          {
+            "lang": "PHP",
+            "label": "PHP",
+            "source": "<?php\n$url = 'https://omapi.ynote.africa/prod/webpaymentmtn/status';\n\n$data = [\n    'customersecret' => 'XXXX-XXX',\n    'customerkey' => 'XXXXXX',\n    'message_id' => 'XXX-XXX'\n];\n\n$options = [\n    'http' => [\n        'header'  => [\n            'Content-Type: application/json',\n            'Authorization: Bearer XXXX-XXX'\n        ],\n        'method'  => 'POST',\n        'content' => json_encode($data)\n    ]\n];\n\n$context  = stream_context_create($options);\n$result = file_get_contents($url, false, $context);\n\necho $result;"
+          },
+          {
+            "lang": "Ruby",
+            "label": "Ruby",
+            "source": "require 'net/http'\nrequire 'json'\n\nurl = URI('https://omapi.ynote.africa/prod/webpaymentmtn/status')\nhttp = Net::HTTP.new(url.host, url.port)\nhttp.use_ssl = true\n\nrequest = Net::HTTP::Post.new(url)\nrequest['Content-Type'] = 'application/json'\nrequest['Authorization'] = 'Bearer XXXX-XXX'\n\nrequest.body = {\n  customersecret: 'XXXX-XXX',\n  customerkey: 'XXXXXX',\n  message_id: 'XXX-XXX'\n}.to_json\n\nresponse = http.request(request)\nputs response.read_body"
+          }
+        ]
+      }
+    },
+    "/webpayment/status#ommut": {
+      "post": {
+        "tags": ["II. API MUTUALISEE ORANGE CAMEROUN"],
+        "summary": "Vérifier le statut du paiement",
+        "description": "Afin de vérifier à tout moment le statut d'un encaisement sur l'API mutualisé, vous devez récupérer de nouveau un jeton sur l'url `https://omapi-token.ynote.africa/oauth2/token`. Vous recevrez un jeton avec un durée de validité comme c'était le cas lorsqu'il s'agissait du paiement. Ensuite, faites un POTST sur l'URL `https://omapi.ynote.africa/prod/webpayment/status` en renseignant le jeton de type Bearer dans l'en tête de la requête.\n\n<h2>Champs requis:</h2>\n<ul><li><span style='color:red'>Jeton d'authentification</span> (Ce jeton récupéré à l'étape 1 sera placé dans le Header)</li><li><span style='color:red'>customerkey</span> (Votre clé client)</li> <li><span style='color:red'>customersecret</span> (Votre clé secrète)</li> <li><span style='color:red'>message_id</span> (L'Id de la transaction: récupérée depuis la réponse lors du post du l'URL d'encaisement. Ici, elle sera sous la forme MP....)</li></ul><img src='https://www.paynote.africa/wp-content/uploads/2025/10/Screenshot-2025-10-28-at-2.27.20-PM.png'/>\n<span style=\"font-family: 'Beretta', sans-serif; font-size: 14.3px; line-height: 1.6;\">Pour effectuer un test directement sur ce site, veuillez rempalcer les valeurs de la partie exemple ci-dessous par ceux qui vous ont été transmis ensuite cliquez sur <b>TRY</b>.</span>",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/PaymentStatusRequestMTN" },
+              "examples": {
+                "status": {
+                  "summary": "Requête test",
+                  "value": {
+                      "customerkey": "xxxxxxxxx",
+                      "customersecret": "xxxxxxxxx",
+                      "message_id": "xxxxxxxxx"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Statut retourné",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "success": {
+                    "summary": "Paiement validé",
+                    "value": {
+                      "ErrorCode": 200,
+                      "body": "Pay Request Accepted",
+                      "ErrorMessage": "",
+                      "parameters": {
+                        "company_id": "xxx",
+                        "currency": "XAF",
+                        "operation": "OM_CMR collection ussd-mut",
+                        "notifurl": "https://monsite.com/notification",
+                        "payment_method": "7",
+                        "paytoken": "MPXXXX",
+                        "status": "PENDING",
+                        "paymentRef": "MPXXXX",
+                        "creationDate": "2025-10-28 12:28:18",
+                        "customer_key": "xxxx",
+                        "reason": "",
+                        "request_id": "order_test",
+                        "amount": "10",
+                        "subscriberMsisdn": "692XXXXXX"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples" :[
+          {
+            "lang": "curl",
+            "label" :"cURL",
+            "source": "curl --location 'https://omapi.ynote.africa/dev/webpayment/status' --header 'Content-Type: application/json' --header 'Authorization: Bearer eyJhbGciO...' --data '{\"customerkey\":\"xxxx\",\"customersecret\":\"xxxx\",\"message_id\": \"MPXXX\"}'"
+          },
+          {
+            "lang": "Java",
+            "source": "import java.io.OutputStream;\nimport java.net.HttpURLConnection;\nimport java.net.URL;\n\npublic class Main {\n  public static void main(String[] args) throws Exception {\n    URL url = new URL(\"https://omapi.ynote.africa/dev/webpayment/status\");\n    HttpURLConnection conn = (HttpURLConnection) url.openConnection();\n    conn.setRequestMethod(\"POST\");\n    conn.setRequestProperty(\"Content-Type\", \"application/json\");\n    conn.setRequestProperty(\"Authorization\", \"Bearer eyJhbGciOi...\");\n    conn.setDoOutput(true);\n\n    String jsonInput = \"{\\\"customerkey\\\":\\\"xxxx\\\",\\\"customersecret\\\":\\\"xxxx\\\",\\\"message_id\\\":\\\"MPXXX\\\"}\";\n\n    try(OutputStream os = conn.getOutputStream()) {\n      os.write(jsonInput.getBytes(\"utf-8\"));\n    }\n\n    int responseCode = conn.getResponseCode();\n    System.out.println(\"Response Code: \" + responseCode);\n  }\n}"
+          },
+          {
+            "lang": "Python",
+            "source": "import requests\n\nurl = 'https://omapi.ynote.africa/dev/webpayment/status'\nheaders = {\n    'Content-Type': 'application/json',\n    'Authorization': 'Bearer eyJhbGciOi...'\n}\n\ndata = {\n    'customerkey': 'xxxx',\n    'customersecret': 'xxxx',\n    'message_id': 'MPXXX'\n}\n\nresponse = requests.post(url, headers=headers, json=data)\nprint(response.status_code)\nprint(response.text)"
+          },
+          {
+            "lang": "PHP",
+            "source": "<?php\n$curl = curl_init();\n\ncurl_setopt_array($curl, [\n  CURLOPT_URL => 'https://omapi.ynote.africa/dev/webpayment/status',\n  CURLOPT_RETURNTRANSFER => true,\n  CURLOPT_CUSTOMREQUEST => 'POST',\n  CURLOPT_HTTPHEADER => [\n    'Content-Type: application/json',\n    'Authorization: Bearer eyJhbGciOi...'\n  ],\n  CURLOPT_POSTFIELDS => json_encode([\n    'customerkey' => 'xxxx',\n    'customersecret' => 'xxxx',\n    'message_id' => 'MPXXX'\n  ])\n]);\n\n$response = curl_exec($curl);\ncurl_close($curl);\necho $response;\n?>"
+          },
+          {
+            "lang": "Go",
+            "source": "package main\n\nimport (\n    \"bytes\"\n    \"fmt\"\n    \"net/http\"\n    \"io/ioutil\"\n)\n\nfunc main() {\n    url := \"https://omapi.ynote.africa/dev/webpayment/status\"\n    jsonData := []byte(`{\"customerkey\":\"xxxx\",\"customersecret\":\"xxxx\",\"message_id\":\"MPXXX\"}`)\n\n    req, _ := http.NewRequest(\"POST\", url, bytes.NewBuffer(jsonData))\n    req.Header.Add(\"Content-Type\", \"application/json\")\n    req.Header.Add(\"Authorization\", \"Bearer eyJhbGciOi...\")\n\n    res, _ := http.DefaultClient.Do(req)\n    body, _ := ioutil.ReadAll(res.Body)\n\n    fmt.Println(res.Status)\n    fmt.Println(string(body))\n}"
+          },
+          {
+            "lang": "Ruby",
+            "source": "require 'net/http'\nrequire 'uri'\nrequire 'json'\n\nuri = URI('https://omapi.ynote.africa/dev/webpayment/status')\nrequest = Net::HTTP::Post.new(uri)\nrequest['Content-Type'] = 'application/json'\nrequest['Authorization'] = 'Bearer eyJhbGciOi...'\n\nbody = {\n  customerkey: 'xxxx',\n  customersecret: 'xxxx',\n  message_id: 'MPXXX'\n}.to_json\n\nrequest.body = body\n\nresponse = Net::HTTP.start(uri.hostname, uri.port, use_ssl: true) do |http|\n  http.request(request)\nend\n\nputs response.code\nputs response.body"
+          }
+        ]
+      }
+    },
+    "/balance": {
+      "post": {
+        "tags": ["VI. API D'ENCAISEMENT M2U Cameroun"],
+        "summary": "Consulter le solde du compte M2U",
+        "description": "�??? Notre API propose un endpoint spécifique pour consulter votre solde M2U. Cette opération nécessite un token d'authentification valide, que vous devez préalablement récupérer sur l'URL `https://omapi-token.ynote.africa/oauth2/token`. Ensuite il faut faire une requête POST sur l'URL `https://omapi.ynote.africa/prod/balance` en renseignant le jeton de type Bearer dans l'en tête de la requête.\n\n<h2>Champs requis:</h2>\n<ul><li><span style='color:red'>Jeton d'authentification</span> (Ce jeton récupéré à l'étape 1 sera placé dans le Header)</li><li><span style='color:red'>customerkey</span> (Votre clé client)</li> <li><span style='color:red'>customersecret</span> (Votre clé secrète)</li> <li><span style='color:red'>payment_method</span> (La méthode de paiement: Ce paramètre doit avoir pour valeur `M2U_CMR`)</li></ul><img src='https://www.paynote.africa/wp-content/uploads/2025/10/Screenshot-2025-10-20-at-10.14.44-AM.png'/>",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/BalanceRequest" },
+              "examples": {
+                "status": {
+                  "summary": "Requête test",
+                  "value": {
+                      "customerkey": "xxxxxxxxx",
+                      "customersecret": "xxxxxxxxx",
+                      "payment_method": "M2U_CMR"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Statut retourné",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "success": {
+                    "summary": "Requête validé",
+                    "value": {
+                      "statusCode": "200",
+                      "errorCode": "200",
+                      "body": "Votre solde est de 400000 FCFA",
+                      "value": "400000"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples" : [
+          {
+            "lang": "curl",
+            "label": "cURL",
+            "source": "curl --location 'https://omapi.ynote.africa/prod/balance/' --header 'Content-Type: application/json' --header 'Authorization: Bearer xxx' --data '{\"customerkey\": \"customerkey\",\"customersecret\": \"customersecret\",\"payment_method\": \"M2U_CMR\"}'"
+          },
+          {
+            "lang": "Python",
+            "label": "Python",
+            "source": "import http.client\nimport json\n\nconn = http.client.HTTPSConnection('omapi.ynote.africa')\n\npayload = json.dumps({\n    'customerkey': 'customerkey',\n    'customersecret': 'customersecret',\n    'payment_method': 'M2U_CMR'\n})\n\nheaders = {\n    'Content-Type': 'application/json',\n    'Authorization': 'Bearer xxx'\n}\n\nconn.request('POST', '/prod/balance/', payload, headers)\nres = conn.getresponse()\ndata = res.read()\n\nprint(data.decode('utf-8'))"
+          },
+          {
+            "lang": "Java",
+            "label": "Java",
+            "source": "import java.net.http.HttpClient;\nimport java.net.http.HttpRequest;\nimport java.net.http.HttpResponse;\nimport java.net.URI;\n\npublic class Main {\n    public static void main(String[] args) throws Exception {\n        String json = \"\"\"\n        {\n            \\\"customerkey\\\": \\\"customerkey\\\",\n            \\\"customersecret\\\": \\\"customersecret\\\",\n            \\\"payment_method\\\": \\\"M2U_CMR\\\"\n        }\n        \"\"\";\n\n        HttpRequest request = HttpRequest.newBuilder()\n            .uri(URI.create(\"https://omapi.ynote.africa/prod/balance/\"))\n            .header(\"Content-Type\", \"application/json\")\n            .header(\"Authorization\", \"Bearer xxx\")\n            .POST(HttpRequest.BodyPublishers.ofString(json))\n            .build();\n\n        HttpClient client = HttpClient.newHttpClient();\n        HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());\n\n        System.out.println(response.body());\n    }\n}"
+          },
+          {
+            "lang": "Go",
+            "label": "Go",
+            "source": "package main\n\nimport (\n    \"bytes\"\n    \"fmt\"\n    \"io\"\n    \"net/http\"\n)\n\nfunc main() {\n    url := \"https://omapi.ynote.africa/prod/balance/\"\n    payload := []byte(`{\n        \\\"customerkey\\\": \\\"customerkey\\\",\n        \\\"customersecret\\\": \\\"customersecret\\\",\n        \\\"payment_method\\\": \\\"M2U_CMR\\\"\n    }`)\n\n    req, _ := http.NewRequest(\"POST\", url, bytes.NewBuffer(payload))\n    req.Header.Add(\"Content-Type\", \"application/json\")\n    req.Header.Add(\"Authorization\", \"Bearer xxx\")\n\n    res, _ := http.DefaultClient.Do(req)\n    defer res.Body.Close()\n    body, _ := io.ReadAll(res.Body)\n\n    fmt.Println(string(body))\n}"
+          },
+          {
+            "lang": "PHP",
+            "label": "PHP",
+            "source": "<?php\n$url = 'https://omapi.ynote.africa/prod/balance/';\n\n$data = [\n    'customerkey' => 'customerkey',\n    'customersecret' => 'customersecret',\n    'payment_method' => 'M2U_CMR'\n];\n\n$options = [\n    'http' => [\n        'header'  => [\n            'Content-Type: application/json',\n            'Authorization: Bearer xxx'\n        ],\n        'method'  => 'POST',\n        'content' => json_encode($data)\n    ]\n];\n\n$context  = stream_context_create($options);\n$result = file_get_contents($url, false, $context);\n\necho $result;"
+          },
+          {
+            "lang": "Ruby",
+            "label": "Ruby",
+            "source": "require 'net/http'\nrequire 'json'\n\nurl = URI('https://omapi.ynote.africa/prod/balance/')\nhttp = Net::HTTP.new(url.host, url.port)\nhttp.use_ssl = true\n\nrequest = Net::HTTP::Post.new(url)\nrequest['Content-Type'] = 'application/json'\nrequest['Authorization'] = 'Bearer xxx'\n\nrequest.body = {\n  customerkey: 'customerkey',\n  customersecret: 'customersecret',\n  payment_method: 'M2U_CMR'\n}.to_json\n\nresponse = http.request(request)\nputs response.read_body"
+          }
+        ]
+      }
+    },
+    "/balance#yoomee": {
+      "post": {
+        "tags": ["VII. API D'ENCAISEMENT Yoomee Cameroun"],
+        "summary": "Consulter le solde du compte Yoomee",
+        "description": "�??? Notre API propose un endpoint spécifique pour consulter votre solde M2U. Cette opération nécessite un token d'authentification valide, que vous devez préalablement récupérer sur l'URL `https://omapi-token.ynote.africa/oauth2/token`. Ensuite il faut faire une requête POST sur l'URL `https://omapi.ynote.africa/prod/balance` en renseignant le jeton de type Bearer dans l'en tête de la requête.\n\n<h2>Champs requis:</h2>\n<ul><li><span style='color:red'>Jeton d'authentification</span> (Ce jeton récupéré à l'étape 1 sera placé dans le Header)</li><li><span style='color:red'>customerkey</span> (Votre clé client)</li> <li><span style='color:red'>customersecret</span> (Votre clé secrète)</li> <li><span style='color:red'>payment_method</span> (La méthode de paiement: Ce paramètre doit avoir pour valeur `YOOMEE_CMR`)</li></ul><img src='https://www.paynote.africa/wp-content/uploads/2026/01/Screenshot-2026-01-18-at-6.22.31-PM.png'/>",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/BalanceRequest" },
+              "examples": {
+                "status": {
+                  "summary": "Requête test",
+                  "value": {
+                      "customerkey": "xxxxxxxxx",
+                      "customersecret": "xxxxxxxxx",
+                      "payment_method": "YOOMEE_CMR"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Statut retourné",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "success": {
+                    "summary": "Requête validé",
+                    "value": {
+                      "statusCode": "200",
+                      "errorCode": "200",
+                      "body": "Votre solde est de 400000 FCFA",
+                      "value": "400000"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples" : [
+          {
+            "lang": "curl",
+            "label": "cURL",
+            "source": "curl --location 'https://omapi.ynote.africa/prod/balance/' --header 'Content-Type: application/json' --header 'Authorization: Bearer xxx' --data '{\"customerkey\": \"customerkey\",\"customersecret\": \"customersecret\",\"payment_method\": \"YOOMEE_CMR\"}'"
+          },
+          {
+            "lang": "Python",
+            "label": "Python",
+            "source": "import http.client\nimport json\n\nconn = http.client.HTTPSConnection('omapi.ynote.africa')\n\npayload = json.dumps({\n    'customerkey': 'customerkey',\n    'customersecret': 'customersecret',\n    'payment_method': 'YOOMEE_CMR'\n})\n\nheaders = {\n    'Content-Type': 'application/json',\n    'Authorization': 'Bearer xxx'\n}\n\nconn.request('POST', '/prod/balance/', payload, headers)\nres = conn.getresponse()\ndata = res.read()\n\nprint(data.decode('utf-8'))"
+          },
+          {
+            "lang": "Java",
+            "label": "Java",
+            "source": "import java.net.http.HttpClient;\nimport java.net.http.HttpRequest;\nimport java.net.http.HttpResponse;\nimport java.net.URI;\n\npublic class Main {\n    public static void main(String[] args) throws Exception {\n        String json = \"\"\"\n        {\n            \\\"customerkey\\\": \\\"customerkey\\\",\n            \\\"customersecret\\\": \\\"customersecret\\\",\n            \\\"payment_method\\\": \\\"YOOMEE_CMR\\\"\n        }\n        \"\"\";\n\n        HttpRequest request = HttpRequest.newBuilder()\n            .uri(URI.create(\"https://omapi.ynote.africa/prod/balance/\"))\n            .header(\"Content-Type\", \"application/json\")\n            .header(\"Authorization\", \"Bearer xxx\")\n            .POST(HttpRequest.BodyPublishers.ofString(json))\n            .build();\n\n        HttpClient client = HttpClient.newHttpClient();\n        HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());\n\n        System.out.println(response.body());\n    }\n}"
+          },
+          {
+            "lang": "Go",
+            "label": "Go",
+            "source": "package main\n\nimport (\n    \"bytes\"\n    \"fmt\"\n    \"io\"\n    \"net/http\"\n)\n\nfunc main() {\n    url := \"https://omapi.ynote.africa/prod/balance/\"\n    payload := []byte(`{\n        \\\"customerkey\\\": \\\"customerkey\\\",\n        \\\"customersecret\\\": \\\"customersecret\\\",\n        \\\"payment_method\\\": \\\"YOOMEE_CMR\\\"\n    }`)\n\n    req, _ := http.NewRequest(\"POST\", url, bytes.NewBuffer(payload))\n    req.Header.Add(\"Content-Type\", \"application/json\")\n    req.Header.Add(\"Authorization\", \"Bearer xxx\")\n\n    res, _ := http.DefaultClient.Do(req)\n    defer res.Body.Close()\n    body, _ := io.ReadAll(res.Body)\n\n    fmt.Println(string(body))\n}"
+          },
+          {
+            "lang": "PHP",
+            "label": "PHP",
+            "source": "<?php\n$url = 'https://omapi.ynote.africa/prod/balance/';\n\n$data = [\n    'customerkey' => 'customerkey',\n    'customersecret' => 'customersecret',\n    'payment_method' => 'YOOMEE_CMR'\n];\n\n$options = [\n    'http' => [\n        'header'  => [\n            'Content-Type: application/json',\n            'Authorization: Bearer xxx'\n        ],\n        'method'  => 'POST',\n        'content' => json_encode($data)\n    ]\n];\n\n$context  = stream_context_create($options);\n$result = file_get_contents($url, false, $context);\n\necho $result;"
+          },
+          {
+            "lang": "Ruby",
+            "label": "Ruby",
+            "source": "require 'net/http'\nrequire 'json'\n\nurl = URI('https://omapi.ynote.africa/prod/balance/')\nhttp = Net::HTTP.new(url.host, url.port)\nhttp.use_ssl = true\n\nrequest = Net::HTTP::Post.new(url)\nrequest['Content-Type'] = 'application/json'\nrequest['Authorization'] = 'Bearer xxx'\n\nrequest.body = {\n  customerkey: 'customerkey',\n  customersecret: 'customersecret',\n  payment_method: 'YOOMEE_CMR'\n}.to_json\n\nresponse = http.request(request)\nputs response.read_body"
+          }
+        ]
+      }
+    },
+    "/refund#mtn": {
+      "parameters": [],
+      "post": {
+        "tags": ["V. API DE REMBOURSEMENT MTN CAMEROUN"],
+        "summary": "Effectuer la requête de remboursement",
+        "description": "<span style=\"font-size: 15px;\">Par la suite, utilisez ce jeton obtenu à l'étape 1 dans votre requête de paiement sur l'URL `https://omapi.ynote.africa/prod/refund`</span></br>Pour tester directement sur cette page, sélectionnez `https://omapi.ynote.africa/prod` dans le menu <b>API Servers</b>. N'utilisez `https://omapi-token.ynote.africa` que pour la récupération du token d'authentification. \n <h2> Champs requis:</h2>\n <ul><li><span style='color:red'>Jeton d'authentification</span> (Ce jeton récupéré à l'étape 1 sera placé dans le Header)</li><li><span style='color:red'>customerkey</span> (Votre clé client)</li><li><span style='color:red'>customersecret</span> (Votre clé secrète)</li> <li><span style='color:red'>amount</span> (Le montant à payer)</li><li><span style='color:red'>webhook</span> (L'URL de notification du changement du statut de la transaction)</li><li><span style='color:red'>refund_method</span> (La méthode de paiement à utiliser, ce paramètre doit avoir pour valeur `MTN_MOMO_CMR`)</li> <li><span style='color:red'>final_customer_phone</span> (Le numéro MTN du bénéficiaire)</li> <li><span style='color:red'>final_customer_name</span> (Le nom du bénéficiare qui possède le numéro).</li> <li><span style='color:red'>fees_inluded</span> Ce paramètre est non obligatoire et permet de calculer automatiquement la commission pour vous: Si ce paramètre n'est pas présent ou s'il est renseigné et vaut �??Yes�?� alors la commission contractuelle sera simplement déduite de ce montant. Si ce paramètre vaut �??No�?� alors le montant de la commission sera automatiquement calculé et prélevé dans votre compte. Exemple: pour un remboursement de 1000 FCFA, si le paramètre vaut �??No�?� votre compte sera débité de 102F afin que le client reçoive exactement 100 FCFA, par contre si le paramètre n'est pas présent ou vaut �??Yes�?�, cela suppose que vous avez mis un montant de 102F dès le départ et le client recevra 100 F CFA.</li> <li><span style='color:red'>payer_message</span> Le message qui sera inclut dans le SMS de notification sur le téléphone du payeur. Ex: PaiementFacture01</li><li><span style='color:red'>transaction_code</span> Identifiant unique de votre transaction. Utilisez une valeur qui vous permet de suivre vos transactions de manière unique (ex : 'CMD-2024-001', 'PAY-789ABC'). Notre système vérifie l'unicité de ce code. Si vous soumettez une requête avec un transaction_code déjà utilisé précédemment, la transaction sera rejetée avec une erreur HTTP 409 Conflict et le message : <b>This code is already associated with another transaction</b>. Cette vérification vous protège contre les erreurs de double soumission accidentelle.</li></ul>\n\n![Exemple Screenshot](https://www.paynote.africa/wp-content/uploads/2026/01/Screenshot-2026-01-25-at-10.38.22-PM.png)\n<h2>Note</h2><span style=\"font-size: 14px;\">L'API vous enverra une réponse contenant un le paramètre <b>MessageId</b> vous permettra plus tard de retrouver le statut de votre transaction à tout moment. Ci-dessous quelques exemples de requêtes dans quelques langages de programmation suivi d'un exemple de réponse de l'API:</span>\n\n<span style=\"font-family: 'Beretta', sans-serif; font-size: 14.3px; line-height: 1.6;\">Pour effectuer un test directement sur ce site, veuillez rempalcer les valeurs de la partie exemple ci-dessous par ceux qui vous ont été transmis ensuite cliquez sur <b>TRY</b>.</span>",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/RefundRequestMTN" },
+              "example": {
+                  "customerkey":"customerkey",
+                  "customersecret":"customersecret",
+                  "webhook":"https://monsite.com/notification",
+                  "amount":"50",
+                  "refund_method": "MTN_MOMO_CMR",
+                  "final_customer_phone":"670XXXXXXXX",
+                  "final_customer_name":"Ali Mahamadou",
+                  "transaction_code": "CMD-2026-002",
+                  "fees_included":"Yes/No",
+                  "payer_message":"ref1234"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Réponse avec succès",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "succès": {
+                    "summary": "Réponse OK",
+                    "value": {
+                        "statusCode": 200,
+                        "MessageId": "xxx-e046-434a-b5bd-xxx",
+                        "QueueId": {
+                            "MessageId": "xxx-e046-434a-b5bd-xxx"
+                        }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "curl",
+            "label": "cURL",
+            "source": "curl --location 'https://omapi.ynote.africa/prod/refund' --header 'Content-Type: application/json' --header 'Authorization: Bearer XXXXX-XXXXXXXX' --data '{\"customerkey\":\"customerkey\",\"customersecret\":\"customersecret\",\"webhook\":\"webhook\",\"amount\":\"amount\",\"refund_method\": \"refund_method\",\"final_customer_phone\":\"final_customer_phone\",\"final_customer_name\":\"final_customer_name\",\"fees_included\":\"Yes/No\",\"transaction_code\":\"CMD-2024-001\",\"payer_message\":\"ref1234\"}'"
+          },
+          {
+            "lang": "PHP",
+            "source": "<?php\n\n$curl = curl_init();\n\ncurl_setopt_array($curl, array(\n  CURLOPT_URL => 'https://omapi.ynote.africa/prod/refund',\n  CURLOPT_RETURNTRANSFER => true,\n  CURLOPT_ENCODING => '',\n  CURLOPT_MAXREDIRS => 10,\n  CURLOPT_TIMEOUT => 0,\n  CURLOPT_FOLLOWLOCATION => true,\n  CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,\n  CURLOPT_CUSTOMREQUEST => 'POST',\n  CURLOPT_POSTFIELDS =>' {\n    \"customerkey\":\"customerkey\",\n    \"customersecret\":\"customersecret\",\n    \"transaction_code\":\"CMD-2024-001\",\n    \"webhook\":\"webhook\",\n    \"amount\":\"amount\",\n    \"refund_method\":\"refund_method\",\n    \"final_customer_phone\":\"final_customer_phone\",\n    \"final_customer_name\":\"final_customer_name\",\n    \"fees_included\":\"Yes/No\",\n    \"payer_message\":\"ref1234\"\n  }',\n  CURLOPT_HTTPHEADER => array(\n    'Content-Type: application/json',\n    'Authorization: Bearer XXXXX-XXXXXXXX'\n  ),\n));\n\n$response = curl_exec($curl);\ncurl_close($curl);\necho $response;\n?>"
+          },
+          {
+            "lang": "Python",
+            "source": "import requests\n\nurl = 'https://omapi.ynote.africa/prod/refund'\nheaders = {\n    'Content-Type': 'application/json',\n    'Authorization': 'Bearer XXXXX-XXXXXXXX'\n}\ndata = {\n    'customerkey': 'customerkey',\n    'customersecret': 'customersecret',\n    'webhook': 'webhook',\n    'amount': 'amount',\n    'refund_method': 'refund_method',\n    'final_customer_phone': 'final_customer_phone',\n    'final_customer_name': 'final_customer_name',\n    'fees_included': 'Yes/No',\n    'transaction_code': 'CMD-2024-001',\n    'payer_message': 'ref1234'\n}\nresponse = requests.post(url, headers=headers, json=data)\nprint(response.text)"
+          },
+          {
+            "lang": "Java",
+            "source": "import java.io.*;\nimport java.net.*;\n\npublic class RefundRequest {\n  public static void main(String[] args) throws Exception {\n    URL url = new URL(\"https://omapi.ynote.africa/prod/refund\");\n    HttpURLConnection conn = (HttpURLConnection) url.openConnection();\n    conn.setRequestMethod(\"POST\");\n    conn.setRequestProperty(\"Content-Type\", \"application/json\");\n    conn.setRequestProperty(\"Authorization\", \"Bearer XXXXX-XXXXXXXX\");\n    conn.setDoOutput(true);\n\n    String jsonInputString = \"{\\n\" +\n      \"  \\\"customerkey\\\": \\\"customerkey\\\",\\n\" +\n      \"  \\\"customersecret\\\": \\\"customersecret\\\",\\n\" +\n      \"  \\\"webhook\\\": \\\"webhook\\\",\\n\" +\n      \"  \\\"amount\\\": \\\"amount\\\",\\n\" +\n      \"  \\\"transaction_code\\\": \\\"CMD-2024-001\\\",\\n\" +\n      \"  \\\"refund_method\\\": \\\"refund_method\\\",\\n\" +\n      \"  \\\"final_customer_phone\\\": \\\"final_customer_phone\\\",\\n\" +\n      \"  \\\"final_customer_name\\\": \\\"final_customer_name\\\",\\n\" +\n      \"  \\\"fees_included\\\": \\\"Yes/No\\\",\\n\" +\n      \"  \\\"payer_message\\\": \\\"ref1234\\\"\\n\" +\n      \"}\";\n\n    try (OutputStream os = conn.getOutputStream()) {\n      byte[] input = jsonInputString.getBytes(\"utf-8\");\n      os.write(input, 0, input.length);\n    }\n\n    BufferedReader br = new BufferedReader(new InputStreamReader(conn.getInputStream(), \"utf-8\"));\n    StringBuilder response = new StringBuilder();\n    String responseLine;\n    while ((responseLine = br.readLine()) != null) {\n      response.append(responseLine.trim());\n    }\n    System.out.println(response.toString());\n  }\n}"
+          },
+          {
+            "lang": "Go",
+            "source": "package main\n\nimport (\n  \"bytes\"\n  \"fmt\"\n  \"net/http\"\n  \"io/ioutil\"\n)\n\nfunc main() {\n  url := \"https://omapi.ynote.africa/prod/refund\"\n  payload := []byte(`{\n    \"customerkey\":\"customerkey\",\n    \"customersecret\":\"customersecret\",\n    \"webhook\":\"webhook\",\n    \"amount\":\"amount\",\n    \"refund_method\":\"refund_method\",\n    \"final_customer_phone\":\"final_customer_phone\",\n    \"final_customer_name\":\"final_customer_name\",\n    \"fees_included\":\"Yes/No\",\n    \"transaction_code\":\"CMD-2024-001\",\n    \"payer_message\":\"ref1234\"\n  }`)\n\n  req, _ := http.NewRequest(\"POST\", url, bytes.NewBuffer(payload))\n  req.Header.Add(\"Content-Type\", \"application/json\")\n  req.Header.Add(\"Authorization\", \"Bearer XXXXX-XXXXXXXX\")\n\n  res, _ := http.DefaultClient.Do(req)\n  defer res.Body.Close()\n  body, _ := ioutil.ReadAll(res.Body)\n  fmt.Println(string(body))\n}"
+          },
+          {
+            "lang": "Ruby",
+            "source": "require 'net/http'\nrequire 'uri'\nrequire 'json'\n\nuri = URI('https://omapi.ynote.africa/prod/refund')\nheaders = {\n  'Content-Type' => 'application/json',\n  'Authorization' => 'Bearer XXXXX-XXXXXXXX'\n}\nbody = {\n  customerkey: 'customerkey',\n  customersecret: 'customersecret',\n  webhook: 'webhook',\n  amount: 'amount',\n  refund_method: 'refund_method',\n  final_customer_phone: 'final_customer_phone',\n  final_customer_name: 'final_customer_name',\n  fees_included: 'Yes/No',\n  transaction_code: 'CMD-2024-001',\n  payer_message: 'ref1234'\n}.to_json\n\nresponse = Net::HTTP.post(uri, body, headers)\nputs response.body"
+          }
+        ]
+      }
+      
+    },
+    "/omcoreapis/1.0.2/mp/paymentstatus/{payToken}": {
+      "get": {
+        "tags": ["I. API D'ENCAISEMENT ORANGE CAMEROUN"],
+        "summary": "Vérifier le statut de l'encaisement",
+        "description": "Afin de vérifier à tout moment le statut d'un encaisement Orange Money, vous devez récupérer de nouveau un jeton sur l'url `https://api-s1.orange.cm/token`. Vous recevrez un jeton avec une durée de validité comme c'était le cas lorsqu'il s'agissait du paiement.  Ensuite, faites un GET sur l'URL `https://api-s1.orange.cm/omcoreapis/1.0.2/mp/paymentstatus/MPXXXX` (remplacez MPXXXX par le payToken de la transaction) en renseignant le jeton de type Bearer dans l'en tête de la requête\n\n<h2>Champs requis:</h2>\n<ul><li><span style='color:red'>Jeton d'authentification</span> (Ce jeton récupéré à l'étape 1 sera placé dans le Header)</li><li><span style='color:red'>X-AUTH-TOKEN</span> Il s'agit du même paramètre utilisé lors de l'initialisation du paiement.</li></ul>\n<span style=\"font-family: 'Beretta', sans-serif; font-size: 14.3px; line-height: 1.6;\">Le corp de cette requête restera vide.</span><img src='https://www.paynote.africa/wp-content/uploads/2025/10/Screenshot-2025-10-22-at-2.13.14-PM.png'/>\n<span style=\"font-family: 'Beretta', sans-serif; font-size: 14.3px; line-height: 1.6;\">Pour effectuer un test directement sur cette page, veuillez renseigner le payToken dans le champ <b>PATH PARAMETERS</b> ci dessous, ensuite dans l'exemple remplacer le customerket et customersecret par vos propres acces et cliquez sur <b>TRY</b>.</span>",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          {
+            "name": "payToken",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Identifiant unique du paiement"
+          },
+          {
+            "name": "X-AUTH-TOKEN",
+            "in": "header",
+            "description": "X-AUTH-TOKEN fourni par Paynote.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "WU5PVXXXXX"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Statut retourné",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "success": {
+                    "summary": "Paiement validé",
+                    "value": {
+                      "message": "Merchant payment successfully initiated",
+                      "data": {
+                          "id": 396258837,
+                          "subscriberMsisdn": "69XXXXXXX",
+                          "amount": 10,
+                          "payToken": "MP25102XXXXXXXX",
+                          "txnmode": "OMAPI#MP#39XX",
+                          "channelUserMsisdn": "69XXXXXXX",
+                          "status": "PENDING",
+                          "txnid": "MP251022.1338.XX",
+                          "inittxnmessage": "Paiement e la clientele done.The devrez confirmer le paiement en saisissant son code PIN et vous recevrez alors un SMS. Merci dutiliser des services Orange Money.",
+                          "inittxnstatus": "200",
+                          "confirmtxnmessage": null,
+                          "confirmtxnstatus": null,
+                          "orderId": "order1234",
+                          "notifUrl": "https://monsite.com/notification",
+                          "description": "Commande 12345",
+                          "createtime": "1761137595"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples":[
+          {
+            "lang": "curl",
+            "label": "cURL",
+            "source": "curl --location 'https://api-s1.orange.cm/omcoreapis/1.0.2/mp/paymentstatus/MP25xxx' --header 'X-AUTH-TOKEN: WU5PVEVIRUFEOllOT1RFSEVBRDIwMjA=' --header 'Authorization: Bearer xxx'"
+          },
+          {
+            "lang": "Java",
+            "source": "import java.net.HttpURLConnection;\nimport java.net.URL;\n\npublic class Main {\n  public static void main(String[] args) throws Exception {\n    URL url = new URL(\"https://api-s1.orange.cm/omcoreapis/1.0.2/mp/paymentstatus/MP25xxx\");\n    HttpURLConnection conn = (HttpURLConnection) url.openConnection();\n    conn.setRequestMethod(\"GET\");\n    conn.setRequestProperty(\"X-AUTH-TOKEN\", \"WU5PVEVIRUFEOllOT1RFSEVBRDIwMjA=\");\n    conn.setRequestProperty(\"Authorization\", \"Bearer xxx\");\n\n    int responseCode = conn.getResponseCode();\n    System.out.println(\"Response Code: \" + responseCode);\n  }\n}"
+          },
+          {
+            "lang": "Python",
+            "source": "import requests\n\nurl = 'https://api-s1.orange.cm/omcoreapis/1.0.2/mp/paymentstatus/MP25xxx'\nheaders = {\n    'X-AUTH-TOKEN': 'WU5PVEVIRUFEOllOT1RFSEVBRDIwMjA=',\n    'Authorization': 'Bearer xxx'\n}\n\nresponse = requests.get(url, headers=headers)\nprint(response.status_code)\nprint(response.text)"
+          },
+          {
+            "lang": "PHP",
+            "source": "<?php\n$curl = curl_init();\n\ncurl_setopt_array($curl, [\n  CURLOPT_URL => 'https://api-s1.orange.cm/omcoreapis/1.0.2/mp/paymentstatus/MP25xxx',\n  CURLOPT_RETURNTRANSFER => true,\n  CURLOPT_CUSTOMREQUEST => 'GET',\n  CURLOPT_HTTPHEADER => [\n    'X-AUTH-TOKEN: WU5PVEVIRUFEOllOT1RFSEVBRDIwMjA=',\n    'Authorization: Bearer xxx'\n  ],\n]);\n\n$response = curl_exec($curl);\ncurl_close($curl);\necho $response;\n?>"
+          },
+          {
+            "lang": "Go",
+            "source": "package main\n\nimport (\n    \"fmt\"\n    \"net/http\"\n    \"io/ioutil\"\n)\n\nfunc main() {\n    url := \"https://api-s1.orange.cm/omcoreapis/1.0.2/mp/paymentstatus/MP25xxx\"\n    req, _ := http.NewRequest(\"GET\", url, nil)\n    req.Header.Add(\"X-AUTH-TOKEN\", \"WU5PVEVIRUFEOllOT1RFSEVBRDIwMjA=\")\n    req.Header.Add(\"Authorization\", \"Bearer xxx\")\n\n    res, _ := http.DefaultClient.Do(req)\n    body, _ := ioutil.ReadAll(res.Body)\n    fmt.Println(res.Status)\n    fmt.Println(string(body))\n}"
+          },
+          {
+            "lang": "Ruby",
+            "source": "require 'net/http'\nrequire 'uri'\n\nuri = URI('https://api-s1.orange.cm/omcoreapis/1.0.2/mp/paymentstatus/MP25xxx')\nrequest = Net::HTTP::Get.new(uri)\nrequest['X-AUTH-TOKEN'] = 'WU5PVEVIRUFEOllOT1RFSEVBRDIwMjA='\nrequest['Authorization'] = 'Bearer xxx'\n\nresponse = Net::HTTP.start(uri.hostname, uri.port, use_ssl: true) do |http|\n  http.request(request)\nend\n\nputs response.code\nputs response.body"
+          }
+        ]
+      }
+    },
+    "/refund": {
+      "parameters": [],
+      "post": {
+        "tags": ["III. API DE REMBOURSEMENT ORANGE CAMEROUN"],
+        "summary": "Effectuer la requête de remboursement",
+        "description": "<span style=\"font-size: 15px;\">Par la suite, utilisez ce jeton obtenu à l'étape 1 dans votre requête de paiement sur l'URL `https://omapi.ynote.africa/prod/refund`</span></br>Pour tester directement sur cette page, sélectionnez `https://omapi.ynote.africa/prod` dans le menu <b>API Servers</b>. N'utilisez `https://omapi-token.ynote.africa` que pour la récupération du token d'authentification. \n <h2> Champs requis:</h2>\n <ul><li><span style='color:red'>Jeton d'authentification</span> (Ce jeton récupéré à l'étape 1 sera placé dans le Header)</li><li><span style='color:red'>customerkey</span> (Votre clé client)</li><li><span style='color:red'>customersecret</span> (Votre clé secrète)</li><li><span style='color:red'>channelUserMsisdn</span> Le channel à utiliser (il s'agit d'un numéro de téléphone qui vous sera fournit.)</li><li><span style='color:red'>pin</span> (Le code pin associé au channelUserMsisdn).</li><li><span style='color:red'>amount</span> (Le montant à payer)</li><li><span style='color:red'>webhook</span> (L'URL de notification du changement du statut de la transaction)</li><li><span style='color:red'>refund_method</span> (La méthode de paiement à utiliser, ce paramètre doit avoir pour valeur `OrangeMoney`)</li> <li><span style='color:red'>final_customer_phone</span> (Le numéro Orange Money du bénéficiaire)</li> <li><span style='color:red'>final_customer_name</span> (Le nom du bénéficiare qui possède le numéro).</li> <li><span style='color:red'>fees_inluded</span> Ce paramètre est non obligatoire et permet de calculer automatiquement la commission pour vous: Si ce paramètre n'est pas présent ou s'il est renseigné et vaut �??Yes�?� alors la commission contractuelle sera simplement déduite de ce montant. Si ce paramètre vaut �??No�?� alors le montant de la commission sera automatiquement calculé et prélevé dans votre compte. Exemple: pour un remboursement de 1000 FCFA, si le paramètre vaut �??No�?� votre compte sera débité de 102F afin que le client reçoive exactement 100 FCFA, par contre si le paramètre n'est pas présent ou vaut �??Yes�?�, cela suppose que vous avez mis un montant de 102F dès le départ et le client recevra 100 F CFA.</li> <li><span style='color:red'>final_customer_name_accuracy</span> Ce paramètre permet de vérifier le nom du client qui possède la puce. La valeur va de 0% à 100%. Par exemple si dans le paramètre final_customer_name vous avez écrit �??Jean-Luc Arribart�?� et que votre précision est a 100%, alors notre système va faire une vérification pour s'assurer que le nom le nom du client est enregistré chez Orange avec le nom �??Jean-Luc Arribart�?� exactement comme vous avez écrit. Par contre si votre précision est à 50% par exemple, il suffirait que le final_customer_name puisse correspondre au moins à 50%. L'argent ne sera pas envoyé au client si la valeur calculée par le système est inférieure à celle que vous avez précisé, vous recevez alors un mail de notification, c'est ca le principe</li><li><span style='color:red'>transaction_code</span> Identifiant unique de votre transaction. Utilisez une valeur qui vous permet de suivre vos transactions de manière unique (ex : 'CMD-2024-001', 'PAY-789ABC'). Notre système vérifie l'unicité de ce code. Si vous soumettez une requête avec un transaction_code déjà utilisé précédemment, la transaction sera rejetée avec une erreur HTTP 409 Conflict et le message : <b>This code is already associated with another transaction</b>. Cette vérification vous protège contre les erreurs de double soumission accidentelle.</li></ul>\n\n![Exemple Screenshot](https://www.paynote.africa/wp-content/uploads/2026/01/Screenshot-2026-01-25-at-10.44.59-PM.png)\n<h2>Note</h2><span style=\"font-size: 14px;\">L'API vous enverra une réponse contenant un le paramètre <b>MessageId</b> vous permettra plus tard de retrouver le statut de votre transaction à tout moment. Ci-dessous quelques exemples de requêtes dans quelques langages de programmation suivi d'un exemple de réponse de l'API:</span>\n\n<span style=\"font-family: 'Beretta', sans-serif; font-size: 14.3px; line-height: 1.6;\">Pour effectuer un test directement sur ce site, veuillez rempalcer les valeurs de la partie exemple ci-dessous par ceux qui vous ont été transmis ensuite cliquez sur <b>TRY</b>.</span>",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/RefundRequest" },
+              "example": {
+                "API_MUT": {
+                  "customerkey": "customerkey",
+                  "customersecret": "customersecret",
+                  "channelUserMsisdn": "channelUserMsisdn",
+                  "transaction_code": "CMD-2026-002",
+                  "final_customer_phone": "69xxxxxxx",
+                  "final_customer_name": "Jean DUPONT",
+                  "final_customer_name_accuracy": "50",
+                  "pin": "0000",
+                  "fees_included": "Yes/No",
+                  "subscriberMsisdn": "692XXXXXX",
+                  "amount": "10",
+                  "webhook": "webhook",
+                  "PaiementMethod": "OrangeMoney"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Réponse avec succès",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "succès": {
+                    "summary": "Réponse OK",
+                    "value": {
+
+                      "MD5OfMessageBody": "4b55cf6629b5f0ee3c8ac91435a2eb35",
+
+                      "MD5OfMessageAttributes": "a8131b3b71091fac4bcb2ca91c0ce5f4",
+
+                      "MessageId": "88bca5ce-6e19-4e23-a6db-5526af30769b",
+
+                      "ResponseMetadata": {
+
+                          "RequestId": "956e59b1-9f8b-51d6-8dbb-020bf55d54ca",
+
+                          "HTTPStatusCode": 200,
+
+                          "HTTPHeaders": {
+
+                              "x-amzn-requestid": "956e59b1-9f8b-51d6-8dbb-020bf55d54ca",
+
+                              "x-amzn-trace-id": "Root=1-63406895-34a2465355b540ad13d22abd;Parent=5552ed3a0a225582;Sampled=0",
+
+                              "date": "Fri, 07 Oct 2022 17:57:42 GMT",
+
+                              "content-type": "text/xml",
+
+                              "content-length": "459"
+
+                          },
+
+                          "RetryAttempts": 0
+
+                    }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "curl",
+            "label": "cURL",
+            "source": "curl -X POST  --location 'https://omapi.ynote.africa/prod/refund' --header 'Content-Type: application/json' --header 'Authorization: Bearer xxxxxxxxxxxxxx' --data '{\"customerkey\":\"customerkey\",\"customersecret\":\"customersecret\",\"channelUserMsisdn\":\"channelUserMsisdn\",\"pin\":\"xxxx\",\"transaction_code\":\"CMD-2024-001\",\"webhook\":\"http://cloudfacile.com\",\"amount\":\"10\",\"final_customer_phone\":\"final_customer_phone\",\"final_customer_name\":\"final_customer_name\",\"refund_method\":\"OrangeMoney\",\"fees_included\":\"Yes\",\"final_customer_name_accuracy\": \"30\"}'"
+          },
+          {
+            "lang": "php",
+            "label": "PHP",
+            "source": "<?php $url='https://omapi.ynote.africa/prod/refund'; $data=['customerkey'=>'customerkey','customersecret'=>'customersecret','channelUserMsisdn'=>'channelUserMsisdn','pin'=>'xxxx','transaction_code'=>'CMD-2024-001','webhook'=>'http://cloudfacile.com','amount'=>'10','final_customer_phone'=>'final_customer_phone','final_customer_name'=>'final_customer_name','refund_method'=>'OrangeMoney','fees_included'=>'Yes','final_customer_name_accuracy'=>'30']; $ch=curl_init($url); curl_setopt_array($ch,[CURLOPT_RETURNTRANSFER=>true,CURLOPT_POST=>true,CURLOPT_HTTPHEADER=>['Content-Type: application/json','Authorization: Bearer xxxxxxxxxxxxxx'],CURLOPT_POSTFIELDS=>json_encode($data)]); $response=curl_exec($ch); curl_close($ch); echo $response; ?>"
+          },
+          {
+            "lang": "python",
+            "label": "Python",
+            "source": "import requests; url='https://omapi.ynote.africa/prod/refund'; headers={'Content-Type':'application/json','Authorization':'Bearer xxxxxxxxxxxxxx'}; payload={'customerkey':'customerkey','customersecret':'customersecret','channelUserMsisdn':'channelUserMsisdn','pin':'xxxx','transaction_code':'CMD-2024-001','webhook':'http://cloudfacile.com','amount':'10','final_customer_phone':'final_customer_phone','final_customer_name':'final_customer_name','refund_method':'OrangeMoney','fees_included':'Yes','final_customer_name_accuracy':'30'}; response=requests.post(url,json=payload,headers=headers); print(response.status_code); print(response.text)"
+          },
+          {
+            "lang": "ruby",
+            "label": "Ruby",
+            "source": "require 'net/http'; uri = URI('https://omapi.ynote.africa/prod/refund'); req = Net::HTTP::Post.new(uri); req['Content-Type'] = 'application/json'; req['Authorization'] = 'Bearer xxxxxxxxxxxxxx'; req.body = '{\"customerkey\":\"customerkey\",\"customersecret\":\"customersecret\",\"channelUserMsisdn\":\"channelUserMsisdn\",\"pin\":\"xxxx\",\"transaction_code\":\"CMD-2024-001\",\"webhook\":\"http://cloudfacile.com\",\"amount\":\"10\",\"final_customer_phone\":\"final_customer_phone\",\"final_customer_name\":\"final_customer_name\",\"refund_method\":\"OrangeMoney\",\"fees_included\":\"Yes\",\"final_customer_name_accuracy\": \"30\"}'; response = Net::HTTP.start(uri.hostname, uri.port, use_ssl: true) {|http| http.request(req)}"
+          },
+          {
+            "lang": "java",
+            "label": "Java",
+            "source": "HttpResponse<String> response = HttpRequest.newBuilder().uri(URI.create(\"https://omapi.ynote.africa/prod/refund\")).header(\"Content-Type\",\"application/json\").header(\"Authorization\",\"Bearer xxxxxxxxxxxxxx\").POST(BodyPublishers.ofString(\"{\"customerkey\":\"customerkey\",\"customersecret\":\"customersecret\",\"channelUserMsisdn\":\"channelUserMsisdn\",\"pin\":\"xxxx\",\"transaction_code\":\"CMD-2024-001\",\"webhook\":\"http://cloudfacile.com\",\"amount\":\"10\",\"final_customer_phone\":\"final_customer_phone\",\"final_customer_name\":\"final_customer_name\",\"refund_method\":\"OrangeMoney\",\"fees_included\":\"Yes\",\"final_customer_name_accuracy\": \"30\"}\")).build().send();"
+          },
+          {
+            "lang": "go",
+            "label": "Go",
+            "source": "package main; import (\"bytes\"; \"net/http\"); func main() { req, _ := http.NewRequest(\"POST\", \"https://omapi.ynote.africa/prod/refund\", bytes.NewBuffer([]byte(`{\"customerkey\":\"customerkey\",\"customersecret\":\"customersecret\",\"channelUserMsisdn\":\"channelUserMsisdn\",\"pin\":\"xxxx\",\"transaction_code\":\"CMD-2024-001\",\"webhook\":\"http://cloudfacile.com\",\"amount\":\"10\",\"final_customer_phone\":\"final_customer_phone\",\"final_customer_name\":\"final_customer_name\",\"refund_method\":\"OrangeMoney\",\"fees_included\":\"Yes\",\"final_customer_name_accuracy\": \"30\"}`))); req.Header.Set(\"Content-Type\", \"application/json\"); req.Header.Set(\"Authorization\", \"Bearer xxxxxxxxxxxxxx\"); client := &http.Client{}; client.Do(req) }"
+          }
+        ]
+      }
+      
+    },
+    "/refund/status/{message_id}": {
+      "post": {
+        "tags": ["III. API DE REMBOURSEMENT ORANGE CAMEROUN"],
+        "summary": "Vérifier le statut du remboursement",
+        "description": "Afin de vérifier à tout moment le statut d'un remboursement Orange Money faite, vous devez récupérer de nouveau un jeton sur l'url `https://omapi-token.ynote.africa/oauth2/token`. Vous recevrez un jeton avec une durée de validité comme c'était le cas lorsqu'il s'agissait du paiement.  Ensuite, faites un POTST sur l'URL `https://omapi.ynote.africa/prod/refund/status` en renseignant le jeton de type Bearer dans l'en tête de la requête\n\n<h2>Champs requis:</h2>\n<ul><li><span style='color:red'>Jeton d'authentification</span> (Ce jeton récupéré à l'étape 1 sera placé dans le Header)</li><li><span style='color:red'>customerkey</span> (Votre clé client)</li> <li><span style='color:red'>customersecret</span> (Votre clé secrète)</li> <li><span style='color:red'>message_id</span> (L'Id de la transaction: récupérée depuis la réponse lors du post du l'URL précédente, le message ID se place dans l'URL (https://omapi.ynote.africa/prod/refund/status/XXXXXXXXXXXXX ou XXXX est le message_id))</li></ul><img src='https://www.paynote.africa/wp-content/uploads/2025/10/Screenshot-2025-10-14-at-12.51.36-AM.png'/>\n<span style=\"font-family: 'Beretta', sans-serif; font-size: 14.3px; line-height: 1.6;\">Pour effectuer un test directement sur cette page, veuillez renseigner le messageId dans le champ <b>PATH PARAMETERS</b> ci dessous, ensuite dans l'exemple remplacer le customerket et customersecret par vos propres acces et cliquez sur <b>TRY</b>.</span>",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          {
+            "name": "message_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Identifiant unique du remboursement"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/RefundStatusRequest" },
+              "examples": {
+                "status": {
+                  "summary": "Requête test",
+                  "value": {
+                      "customerkey": "xxxxxxxxx",
+                      "customersecret": "xxxxxxxxx"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Statut retourné",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "success": {
+                    "summary": "Paiement validé",
+                    "value": {
+                      "result": {"message": "Transaction retrieved successfully", "data": {"createtime": "1676655193", "subscriberMsisdn": "69xxxxxx", "amount": 10, "payToken": "CI230217XXXX", "txnid": "CI23XX.1833.C44XX9", "txnmode": "rembourse", "txnstatus": "200", "orderId": "rembourse", "status": "SUCCESSFULL", "channelUserMsisdn": "69xxxx", "description": "Remboursement"}}, "parameters": {"amount": "10", "xauth": "XXXXXX", "channel_user_msisdn": "69xxxxxxx", "customer_key": "customer_key", "customer_secret": "customer_secret", "final_customer_name": "Jean DUPONT", "final_customer_phone": "69xxxxxxx"}, "CreateAt": "02-17-2023 17:33:45"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples":[
+          {
+            "lang": "curl",
+            "label": "cURL",
+            "source": "curl --location 'https://omapi.ynote.africa/prod/refund' --header 'Content-Type: application/json' --header 'Authorization: Bearer eyJhbGciOiJSU...' --data '{\"customerkey\":\"customerkey\",\"customersecret\":\"customersecret\",\"channelUserMsisdn\":\"69XXXXXXX\",\"pin\":\"0000\",\"webhook\":\"https://monsite.com/notification\",\"amount\":\"10\",\"final_customer_phone\":\"69XXXXXXX\",\"final_customer_name\":\"JEAN LOUIS LEMOINE\",\"refund_method\":\"OrangeMoney\",\"fees_included\":\"Yes\"}'"
+          },
+          {
+            "lang": "Java",
+            "label": "Java",
+            "source": "import java.net.http.HttpClient;\nimport java.net.http.HttpRequest;\nimport java.net.http.HttpResponse;\nimport java.net.URI;\n\npublic class Main {\n    public static void main(String[] args) throws Exception {\n        String json = \"\"\"\n        {\n            \\\"customerkey\\\": \\\"customerkey\\\",\n            \\\"customersecret\\\": \\\"customersecret\\\",\n            \\\"channelUserMsisdn\\\": \\\"69XXXXXXX\\\",\n            \\\"pin\\\": \\\"0000\\\",\n            \\\"webhook\\\": \\\"https://monsite.com/notification\\\",\n            \\\"amount\\\": \\\"10\\\",\n            \\\"final_customer_phone\\\": \\\"69XXXXXXX\\\",\n            \\\"final_customer_name\\\": \\\"JEAN LOUIS LEMOINE\\\",\n            \\\"refund_method\\\": \\\"OrangeMoney\\\",\n            \\\"fees_included\\\": \\\"Yes\\\"\n        }\n        \"\"\";\n\n        HttpRequest request = HttpRequest.newBuilder()\n            .uri(URI.create(\"https://omapi.ynote.africa/prod/refund\"))\n            .header(\"Content-Type\", \"application/json\")\n            .header(\"Authorization\", \"Bearer eyJhbGciOiJSU...\")\n            .POST(HttpRequest.BodyPublishers.ofString(json))\n            .build();\n\n        HttpClient client = HttpClient.newHttpClient();\n        HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());\n\n        System.out.println(response.body());\n    }\n}"
+          },
+          {
+            "lang": "Python",
+            "label": "Python",
+            "source": "import http.client\nimport json\n\nconn = http.client.HTTPSConnection('omapi.ynote.africa')\n\npayload = json.dumps({\n    'customerkey': 'customerkey',\n    'customersecret': 'customersecret',\n    'channelUserMsisdn': '69XXXXXXX',\n    'pin': '0000',\n    'webhook': 'https://monsite.com/notification',\n    'amount': '10',\n    'final_customer_phone': '69XXXXXXX',\n    'final_customer_name': 'JEAN LOUIS LEMOINE',\n    'refund_method': 'OrangeMoney',\n    'fees_included': 'Yes'\n})\n\nheaders = {\n    'Content-Type': 'application/json',\n    'Authorization': 'Bearer eyJhbGciOiJSU...'\n}\n\nconn.request('POST', '/prod/refund', payload, headers)\nres = conn.getresponse()\ndata = res.read()\n\nprint(data.decode('utf-8'))"
+          },
+          {
+            "lang": "Go",
+            "label": "Go",
+            "source": "package main\n\nimport (\n    \"bytes\"\n    \"fmt\"\n    \"io\"\n    \"net/http\"\n)\n\nfunc main() {\n    url := \"https://omapi.ynote.africa/prod/refund\"\n    payload := []byte(`{\n        \\\"customerkey\\\": \\\"customerkey\\\",\n        \\\"customersecret\\\": \\\"customersecret\\\",\n        \\\"channelUserMsisdn\\\": \\\"69XXXXXXX\\\",\n        \\\"pin\\\": \\\"0000\\\",\n        \\\"webhook\\\": \\\"https://monsite.com/notification\\\",\n        \\\"amount\\\": \\\"10\\\",\n        \\\"final_customer_phone\\\": \\\"69XXXXXXX\\\",\n        \\\"final_customer_name\\\": \\\"JEAN LOUIS LEMOINE\\\",\n        \\\"refund_method\\\": \\\"OrangeMoney\\\",\n        \\\"fees_included\\\": \\\"Yes\\\"\n    }`)\n\n    req, _ := http.NewRequest(\"POST\", url, bytes.NewBuffer(payload))\n    req.Header.Add(\"Content-Type\", \"application/json\")\n    req.Header.Add(\"Authorization\", \"Bearer eyJhbGciOiJSU...\")\n\n    res, _ := http.DefaultClient.Do(req)\n    defer res.Body.Close()\n    body, _ := io.ReadAll(res.Body)\n\n    fmt.Println(string(body))\n}"
+          },
+          {
+            "lang": "PHP",
+            "label": "PHP",
+            "source": "<?php\n$url = 'https://omapi.ynote.africa/prod/refund';\n\n$data = [\n    'customerkey' => 'customerkey',\n    'customersecret' => 'customersecret',\n    'channelUserMsisdn' => '69XXXXXXX',\n    'pin' => '0000',\n    'webhook' => 'https://monsite.com/notification',\n    'amount' => '10',\n    'final_customer_phone' => '69XXXXXXX',\n    'final_customer_name' => 'JEAN LOUIS LEMOINE',\n    'refund_method' => 'OrangeMoney',\n    'fees_included' => 'Yes'\n];\n\n$options = [\n    'http' => [\n        'header'  => [\n            'Content-Type: application/json',\n            'Authorization: Bearer eyJhbGciOiJSU...'\n        ],\n        'method'  => 'POST',\n        'content' => json_encode($data)\n    ]\n];\n\n$context  = stream_context_create($options);\n$result = file_get_contents($url, false, $context);\n\necho $result;"
+          },
+          {
+            "lang": "Ruby",
+            "label": "Ruby",
+            "source": "require 'net/http'\nrequire 'json'\n\nurl = URI('https://omapi.ynote.africa/prod/refund')\nhttp = Net::HTTP.new(url.host, url.port)\nhttp.use_ssl = true\n\nrequest = Net::HTTP::Post.new(url)\nrequest['Content-Type'] = 'application/json'\nrequest['Authorization'] = 'Bearer eyJhbGciOiJSU...'\n\nrequest.body = {\n  customerkey: 'customerkey',\n  customersecret: 'customersecret',\n  channelUserMsisdn: '69XXXXXXX',\n  pin: '0000',\n  webhook: 'https://monsite.com/notification',\n  amount: '10',\n  final_customer_phone: '69XXXXXXX',\n  final_customer_name: 'JEAN LOUIS LEMOINE',\n  refund_method: 'OrangeMoney',\n  fees_included: 'Yes'\n}.to_json\n\nresponse = http.request(request)\nputs response.read_body"
+          }
+        ]
+      }
+    },
+    "/refund/status/{message_id_mtn}": {
+      "post": {
+        "tags": ["V. API DE REMBOURSEMENT MTN CAMEROUN"],
+        "summary": "Vérifier le statut du remboursement",
+        "description": "Afin de vérifier à tout moment le statut d'un remboursement MTN Cameroun, vous devez récupérer de nouveau un jeton sur l'url `https://omapi-token.ynote.africa/oauth2/token`. Vous recevrez un jeton avec une durée de validité comme c'était le cas lorsqu'il s'agissait du paiement.  Ensuite, faites un POTST sur l'URL `https://omapi.ynote.africa/prod/refund/status/XXX` (où XXX représente le messageId de la transaction récupéré depuis la réponse lors du post du l'URL précédente) en renseignant le jeton de type Bearer dans l'en tête de la requête\n\n<h2>Champs requis:</h2>\n<ul><li><span style='color:red'>Jeton d'authentification</span> (Ce jeton récupéré à l'étape 1 sera placé dans le Header)</li><li><span style='color:red'>customerkey</span> (Votre clé client)</li> <li><span style='color:red'>customersecret</span> (Votre clé secrète)</li> <li><span style='color:red'>refund_method</span> (La méthode de remboursement utilisée, dans notre cas, la valeur doit être systématiquement `MTN_MOMO_CMR`)</li></ul><img src='https://www.paynote.africa/wp-content/uploads/2025/10/Screenshot-2025-10-20-at-5.59.47-PM.png'/>\n<span style=\"font-family: 'Beretta', sans-serif; font-size: 14.3px; line-height: 1.6;\">Pour effectuer un test directement sur cette page, veuillez renseigner le messageId dans le champ <b>PATH PARAMETERS</b> ci dessous, ensuite dans l'exemple remplacer le customerket et customersecret par vos propres acces et cliquez sur <b>TRY</b>.</span>",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          {
+            "name": "message_id_mtn",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Identifiant unique du remboursement"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/RefundStatusRequestMTN" },
+              "examples": {
+                "status": {
+                  "summary": "Requête test",
+                  "value": {
+                      "customerkey": "xxxxxxxxx",
+                      "customersecret": "xxxxxxxxx",
+                      "refund_method": "MTN_MOMO_CMR"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Statut retourné",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "success": {
+                    "summary": "Paiement validé",
+                    "value": {
+                      "ErrorCode": 200,
+                      "body": "Refund MTN Momo CMR status",
+                      "ErrorMessage": "",
+                      "status": "SUCCESSFUL",
+                      "parameters": {
+                          "operation": "disbursment Mtn",
+                          "currency": "EUR",
+                          "amount": "5000",
+                          "referenceId": "xx-7e52-4130-b820-xx",
+                          "final_customer_name": "Ali Mahamadou",
+                          "final_customer_phone": "679XXXXXX",
+                          "notifUrl": "https://monsite.com/notification"
+                      },
+                      "CreateAt": "10-20-2025 18:30:49",
+                      "MessageId": "xx-7e52-4130-b820-xx"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples":[
+          {
+            "lang": "curl",
+            "label": "cURL",
+            "source": "curl --location --request GET 'https://omapi.ynote.africa/prod/refund/status/id' --header 'Content-Type: application/json' --header 'Authorization: Bearer XXXXX-XXXXXXXX' --data '{\"customerkey\":\"customerkey\", \"customersecret\":\"customersecret\", \"refund_method\": \"MTN_MOMO_CMR\" }'"
+          },
+          {
+            "lang": "PHP",
+            "source": "<?php\n\n$curl = curl_init();\n\ncurl_setopt_array($curl, array(\n  CURLOPT_URL => 'https://omapi.ynote.africa/prod/refund/status/id',\n  CURLOPT_RETURNTRANSFER => true,\n  CURLOPT_ENCODING => '',\n  CURLOPT_MAXREDIRS => 10,\n  CURLOPT_TIMEOUT => 0,\n  CURLOPT_FOLLOWLOCATION => true,\n  CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,\n  CURLOPT_CUSTOMREQUEST => 'GET',\n  CURLOPT_POSTFIELDS =>' {\n    \"customerkey\":\"customerkey\",\n    \"customersecret\":\"customersecret\",\n    \"refund_method\":\"MTN_MOMO_CMR\"\n  }',\n  CURLOPT_HTTPHEADER => array(\n    'Content-Type: application/json',\n    'Authorization: Bearer XXXXX-XXXXXXXX'\n  ),\n));\n\n$response = curl_exec($curl);\ncurl_close($curl);\necho $response;\n?>"
+          },
+          {
+            "lang": "Python",
+            "source": "import requests\n\nurl = 'https://omapi.ynote.africa/prod/refund/status/id'\nheaders = {\n    'Content-Type': 'application/json',\n    'Authorization': 'Bearer XXXXX-XXXXXXXX'\n}\ndata = {\n    'customerkey': 'customerkey',\n    'customersecret': 'customersecret',\n    'refund_method': 'MTN_MOMO_CMR'\n}\nresponse = requests.get(url, headers=headers, json=data)\nprint(response.text)"
+          },
+          {
+            "lang": "Java",
+            "source": "import java.io.*;\nimport java.net.*;\n\npublic class RefundStatus {\n  public static void main(String[] args) throws Exception {\n    URL url = new URL(\"https://omapi.ynote.africa/prod/refund/status/id\");\n    HttpURLConnection conn = (HttpURLConnection) url.openConnection();\n    conn.setRequestMethod(\"GET\");\n    conn.setRequestProperty(\"Content-Type\", \"application/json\");\n    conn.setRequestProperty(\"Authorization\", \"Bearer XXXXX-XXXXXXXX\");\n    conn.setDoOutput(true);\n\n    String jsonInputString = \"{\\n\" +\n      \"  \\\"customerkey\\\": \\\"customerkey\\\",\\n\" +\n      \"  \\\"customersecret\\\": \\\"customersecret\\\",\\n\" +\n      \"  \\\"refund_method\\\": \\\"MTN_MOMO_CMR\\\"\\n\" +\n      \"}\";\n\n    try (OutputStream os = conn.getOutputStream()) {\n      byte[] input = jsonInputString.getBytes(\"utf-8\");\n      os.write(input, 0, input.length);\n    }\n\n    BufferedReader br = new BufferedReader(new InputStreamReader(conn.getInputStream(), \"utf-8\"));\n    StringBuilder response = new StringBuilder();\n    String responseLine;\n    while ((responseLine = br.readLine()) != null) {\n      response.append(responseLine.trim());\n    }\n    System.out.println(response.toString());\n  }\n}"
+          },
+          {
+            "lang": "Go",
+            "source": "package main\n\nimport (\n  \"bytes\"\n  \"fmt\"\n  \"net/http\"\n  \"io/ioutil\"\n)\n\nfunc main() {\n  url := \"https://omapi.ynote.africa/prod/refund/status/id\"\n  payload := []byte(`{\n    \"customerkey\":\"customerkey\",\n    \"customersecret\":\"customersecret\",\n    \"refund_method\":\"MTN_MOMO_CMR\"\n  }`)\n\n  req, _ := http.NewRequest(\"GET\", url, bytes.NewBuffer(payload))\n  req.Header.Add(\"Content-Type\", \"application/json\")\n  req.Header.Add(\"Authorization\", \"Bearer XXXXX-XXXXXXXX\")\n\n  res, _ := http.DefaultClient.Do(req)\n  defer res.Body.Close()\n  body, _ := ioutil.ReadAll(res.Body)\n  fmt.Println(string(body))\n}"
+          },
+          {
+            "lang": "Ruby",
+            "source": "require 'net/http'\nrequire 'uri'\nrequire 'json'\n\nuri = URI('https://omapi.ynote.africa/prod/refund/status/id')\nheaders = {\n  'Content-Type' => 'application/json',\n  'Authorization' => 'Bearer XXXXX-XXXXXXXX'\n}\nbody = {\n  customerkey: 'customerkey',\n  customersecret: 'customersecret',\n  refund_method: 'MTN_MOMO_CMR'\n}.to_json\n\nhttp = Net::HTTP.new(uri.host, uri.port)\nhttp.use_ssl = true\nrequest = Net::HTTP::Get.new(uri.path, headers)\nrequest.body = body\n\nresponse = http.request(request)\nputs response.body"
+          }
+        ]
+      }
+    },
+    "/balance#MTN": {
+      "post": {
+        "tags": ["IV. API D'ENCAISEMENT MTN CAMEROUN", "V. API DE REMBOURSEMENT MTN CAMEROUN"],
+        "summary": "Consulter le solde du compte",
+        "description": "�??? Notre API propose un endpoint spécifique pour consulter votre solde MTN. Cette opération nécessite un token d'authentification valide, que vous devez préalablement récupérer sur l'URL `https://omapi-token.ynote.africa/oauth2/token`. Ensuite il faut faire une requête POST sur l'URL `https://omapi.ynote.africa/prod/balance` en renseignant le jeton de type Bearer dans l'en tête de la requête.\n\n<h2>Champs requis:</h2>\n<ul><li><span style='color:red'>Jeton d'authentification</span> (Ce jeton récupéré à l'étape 1 sera placé dans le Header)</li><li><span style='color:red'>customerkey</span> (Votre clé client)</li> <li><span style='color:red'>customersecret</span> (Votre clé secrète)</li> <li><span style='color:red'>payment_method</span> (La méthode de paiement: Ce paramètre doit avoir pour valeur `MTN_MOMO_CMR`)</li></ul><img src='https://www.paynote.africa/wp-content/uploads/2025/10/Screenshot-2025-10-20-at-9.20.26-AM.png'/>\n<h3 style=\"color: red\">Note</h3><span style=\"color: red\">Comme illustré dans l'exemple Postman, cette requête utilise la méthode GET. Cependant, pour le test sur cette page web, elle est envoyée en POST pour respecter les standards HTTP qui interdisent les corps de requête dans les méthodes GET. Une migration vers l'endpoint POST est en cours et sera effective dans les prochaines versions.</span>",
+        "security": [{ "bearerAuth": [] }],
+        "x-method-override": "POST",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/BalanceRequestMTN" },
+              "examples": {
+                "status": {
+                  "summary": "Requête test",
+                  "value": {
+                      "customerkey": "xxxxxxxxx",
+                      "customersecret": "xxxxxxxxx",
+                      "payment_method": "MTN_MOMO_CMR"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Statut retourné",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "success": {
+                    "summary": "Requête validé",
+                    "value": {
+                      "statusCode": "200",
+                      "errorCode": "200",
+                      "body": "Votre solde est de 50000 FCFA",
+                      "value": "50000"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples" : [
+          {
+            "lang": "curl",
+            "label": "cURL",
+            "source": "curl --location 'https://omapi.ynote.africa/prod/balance/' --header 'Content-Type: application/json' --header 'Authorization: Bearer xxx' --data '{\"customerkey\": \"customerkey\",\"customersecret\": \"customersecret\",\"payment_method\": \"M2U_CMR\"}'"
+          },
+          {
+            "lang": "Python",
+            "label": "Python",
+            "source": "import http.client\nimport json\n\nconn = http.client.HTTPSConnection('omapi.ynote.africa')\n\npayload = json.dumps({\n    'customerkey': 'customerkey',\n    'customersecret': 'customersecret',\n    'payment_method': 'M2U_CMR'\n})\n\nheaders = {\n    'Content-Type': 'application/json',\n    'Authorization': 'Bearer xxx'\n}\n\nconn.request('POST', '/prod/balance/', payload, headers)\nres = conn.getresponse()\ndata = res.read()\n\nprint(data.decode('utf-8'))"
+          },
+          {
+            "lang": "Java",
+            "label": "Java",
+            "source": "import java.net.http.HttpClient;\nimport java.net.http.HttpRequest;\nimport java.net.http.HttpResponse;\nimport java.net.URI;\n\npublic class Main {\n    public static void main(String[] args) throws Exception {\n        String json = \"\"\"\n        {\n            \\\"customerkey\\\": \\\"customerkey\\\",\n            \\\"customersecret\\\": \\\"customersecret\\\",\n            \\\"payment_method\\\": \\\"M2U_CMR\\\"\n        }\n        \"\"\";\n\n        HttpRequest request = HttpRequest.newBuilder()\n            .uri(URI.create(\"https://omapi.ynote.africa/prod/balance/\"))\n            .header(\"Content-Type\", \"application/json\")\n            .header(\"Authorization\", \"Bearer xxx\")\n            .POST(HttpRequest.BodyPublishers.ofString(json))\n            .build();\n\n        HttpClient client = HttpClient.newHttpClient();\n        HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());\n\n        System.out.println(response.body());\n    }\n}"
+          },
+          {
+            "lang": "Go",
+            "label": "Go",
+            "source": "package main\n\nimport (\n    \"bytes\"\n    \"fmt\"\n    \"io\"\n    \"net/http\"\n)\n\nfunc main() {\n    url := \"https://omapi.ynote.africa/prod/balance/\"\n    payload := []byte(`{\n        \\\"customerkey\\\": \\\"customerkey\\\",\n        \\\"customersecret\\\": \\\"customersecret\\\",\n        \\\"payment_method\\\": \\\"M2U_CMR\\\"\n    }`)\n\n    req, _ := http.NewRequest(\"POST\", url, bytes.NewBuffer(payload))\n    req.Header.Add(\"Content-Type\", \"application/json\")\n    req.Header.Add(\"Authorization\", \"Bearer xxx\")\n\n    res, _ := http.DefaultClient.Do(req)\n    defer res.Body.Close()\n    body, _ := io.ReadAll(res.Body)\n\n    fmt.Println(string(body))\n}"
+          },
+          {
+            "lang": "PHP",
+            "label": "PHP",
+            "source": "<?php\n$url = 'https://omapi.ynote.africa/prod/balance/';\n\n$data = [\n    'customerkey' => 'customerkey',\n    'customersecret' => 'customersecret',\n    'payment_method' => 'M2U_CMR'\n];\n\n$options = [\n    'http' => [\n        'header'  => [\n            'Content-Type: application/json',\n            'Authorization: Bearer xxx'\n        ],\n        'method'  => 'POST',\n        'content' => json_encode($data)\n    ]\n];\n\n$context  = stream_context_create($options);\n$result = file_get_contents($url, false, $context);\n\necho $result;"
+          },
+          {
+            "lang": "Ruby",
+            "label": "Ruby",
+            "source": "require 'net/http'\nrequire 'json'\n\nurl = URI('https://omapi.ynote.africa/prod/balance/')\nhttp = Net::HTTP.new(url.host, url.port)\nhttp.use_ssl = true\n\nrequest = Net::HTTP::Post.new(url)\nrequest['Content-Type'] = 'application/json'\nrequest['Authorization'] = 'Bearer xxx'\n\nrequest.body = {\n  customerkey: 'customerkey',\n  customersecret: 'customersecret',\n  payment_method: 'M2U_CMR'\n}.to_json\n\nresponse = http.request(request)\nputs response.read_body"
+          }
+        ]
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "basicAuth": { "type": "http", "scheme": "basic" },
+      "bearerAuth": { "type": "http", "scheme": "bearer", "bearerFormat": "JWT" }
+    },
+    "schemas": {
+      "PaymentRequest": {
+        "type": "object",
+        "properties": {
+          "API_MUT": {
+            "type": "object",
+            "properties": {
+              "customerkey": { "type": "string" },
+              "customersecret": { "type": "string" },
+              "subscriberMsisdn": { "type": "string" },
+              "otp": { "type": "string" },
+              "description": { "type": "string" },
+              "amount": { "type": "string" },
+              "notifUrl": { "type": "string" },
+              "PaiementMethod": { "type": "string" }
+            },
+            "required": ["customerkey", "customersecret", "subscriberMsisdn", "amount", "otp", "notifUrl", "PaiementMethod", "description"]
+          }
+        }
+      },
+      "PaymentRequestMPINIT": {
+        "type": "object",
+        "properties": {
+        }
+      },
+      "PaymentRequestMTN": {
+        "type": "object",
+        "properties": {
+          "API_MUT": {
+            "type": "object",
+            "properties": {
+              "customerkey": { "type": "string" },
+              "customersecret": { "type": "string" },
+              "order_id": { "type": "string" },
+              "description": { "type": "string" },
+              "amount": { "type": "string" },
+              "subscriberMsisdn": { "type": "string" },
+              "notifUrl": { "type": "string" },
+              "PaiementMethod": { "type": "string" }
+            },
+            "required": ["customerkey", "customersecret", "order_id", "amount", "description", "notifUrl", "PaiementMethod", "subscriberMsisdn"]
+          }
+        }
+      },
+      "PaymentRequestOMMUT": {
+        "type": "object",
+        "properties": {
+          "API_MUT": {
+            "type": "object",
+            "properties": {
+              "customerkey": { "type": "string" },
+              "customersecret": { "type": "string" },
+              "order_id": { "type": "string" },
+              "description": { "type": "string" },
+              "amount": { "type": "string" },
+              "subscriberMsisdn": { "type": "string" },
+              "notifUrl": { "type": "string" },
+              "PaiementMethod": { "type": "string" }
+            },
+            "required": ["customerkey", "customersecret", "order_id", "amount", "description", "notifUrl", "PaiementMethod", "subscriberMsisdn"]
+          }
+        }
+      },
+      "PaymentRequestYoomee": {
+        "type": "object",
+        "properties": {
+          "API_MUT": {
+            "type": "object",
+            "properties": {
+              "customerkey": { "type": "string" },
+              "customersecret": { "type": "string" },
+              "subscriberMsisdn": { "type": "string" },
+              "description": { "type": "string" },
+              "amount": { "type": "string" },
+              "notifUrl": { "type": "string" },
+              "PaiementMethod": { "type": "string" }
+            },
+            "required": ["customerkey", "customersecret", "subscriberMsisdn", "amount", "description", "notifUrl", "PaiementMethod"]
+          }
+        }
+      },
+      "RefundRequest": {
+        "type": "object",
+        "properties": {
+            "customerkey": { "type": "string" },
+            "customersecret": { "type": "string" },
+            "channelUserMsisdn": { "type": "string" },
+            "pin": { "type": "string" },
+            "webhook": { "type": "string" },
+            "amount": { "type": "string" },
+            "final_customer_phone": { "type": "string" },
+            "final_customer_name": { "type": "string" },
+            "transaction_code": { "type": "string" },
+            "refund_method": { "type": "string" },
+            "fees_included": { "type": "string" },
+            "final_customer_name_accuracy": { "type": "string" }
+        },
+        "required": ["customerkey", "customersecret", "channelUserMsisdn", "pin", "webhook", "transaction_code", "amount", "final_customer_phone", "final_customer_name", "refund_method", "fees_included", "final_customer_name_accuracy"]
+      },
+      "RefundRequestMTN": {
+        "type": "object",
+        "properties": {
+            "customerkey": { "type": "string" },
+            "customersecret": { "type": "string" },
+            "webhook": { "type": "string" },
+            "amount": { "type": "string" },
+            "final_customer_phone": { "type": "string" },
+            "final_customer_name": { "type": "string" },
+            "transaction_code": { "type": "string" },
+            "refund_method": { "type": "string" },
+            "fees_included": { "type": "string" },
+            "payer_message": { "type": "string" }
+        },
+        "required": ["customerkey", "transaction_code", "customersecret", "webhook", "amount", "final_customer_phone", "final_customer_name", "refund_method", "fees_included", "payer_message"]
+      },
+      "RefundRequestMP": {
+        "type": "object",
+        "properties": {
+            "notifUrl": { "type": "string" },
+            "channelUserMsisdn": { "type": "string" },
+            "amount": { "type": "string" },
+            "subscriberMsisdn": { "type": "string" },
+            "pin": { "type": "string" },
+            "orderId": { "type": "string" },
+            "payToken": { "type": "string" }
+        },
+        "required": ["notifUrl", "subscriberMsisdn", "channelUserMsisdn", "amount", "pin", "orderId", "description", "payToken"]
+      },
+      "PaymentStatusRequest": {
+        "type": "object",
+        "properties": {
+            "customerkey": { "type": "string" },
+            "customersecret": { "type": "string" },
+            "message_id": { "type": "string" }
+        },
+        "required": ["customerkey", "customersecret", "message_id"]
+      },
+      "PaymentStatusRequestYoomee": {
+        "type": "object",
+        "properties": {
+            "customerkey": { "type": "string" },
+            "customersecret": { "type": "string" },
+            "message_id": { "type": "string" },
+            "payment_method": { "type": "string" }
+        },
+        "required": ["customerkey", "customersecret", "message_id", "payment_method"]
+      },
+      "PaymentStatusRequestMTN": {
+        "type": "object",
+        "properties": {
+            "customerkey": { "type": "string" },
+            "customersecret": { "type": "string" },
+            "message_id": { "type": "string" }
+        },
+        "required": ["customerkey", "customersecret", "message_id"]
+      },
+      "BalanceRequest": {
+        "type": "object",
+        "properties": {
+            "customerkey": { "type": "string" },
+            "customersecret": { "type": "string" },
+            "payment_method": { "type": "string" }
+        },
+        "required": ["customerkey", "customersecret", "payment_method"]
+      },
+      "BalanceRequestMTN": {
+        "type": "object",
+        "properties": {
+            "customerkey": { "type": "string" },
+            "customersecret": { "type": "string" },
+            "payment_method": { "type": "string" }
+        },
+        "required": ["customerkey", "customersecret", "payment_method"]
+      },
+      "RefundStatusRequest": {
+        "type": "object",
+        "properties": {
+            "customerkey": { "type": "string" },
+            "customersecret": { "type": "string" }
+        },
+        "required": ["customerkey", "customersecret"]
+      },
+      "RefundStatusRequestMTN": {
+        "type": "object",
+        "properties": {
+            "customerkey": { "type": "string" },
+            "customersecret": { "type": "string" },
+            "refund_method": { "type": "string" }
+        },
+        "required": ["customerkey", "customersecret", "refund_method"]
+      }
+    }
+  }
+}
+

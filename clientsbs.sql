@@ -95,10 +95,26 @@ CREATE TABLE `compte` (
   `statut` enum('actif','inactif','bloque') COLLATE utf8mb4_general_ci DEFAULT 'actif',
   `idclient` int DEFAULT NULL,
   `numero_compte` varchar(55) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
+  `pin_code` varchar(255) COLLATE utf8mb4_general_ci DEFAULT NULL,
   `idzone` int DEFAULT NULL,
   `idguichet` int DEFAULT NULL,
   `idinst` int DEFAULT NULL,
   `idag` int DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `app`
+--
+
+CREATE TABLE `app` (
+  `idapp` int NOT NULL,
+  `nom_app` varchar(100) COLLATE utf8mb4_general_ci NOT NULL,
+  `api_key` varchar(255) COLLATE utf8mb4_general_ci NOT NULL,
+  `secret_key` varchar(255) COLLATE utf8mb4_general_ci NOT NULL,
+  `date_creation` datetime DEFAULT CURRENT_TIMESTAMP,
+  `date_modification` datetime DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 -- --------------------------------------------------------
@@ -159,6 +175,7 @@ CREATE TABLE `transaction` (
   `description` text COLLATE utf8mb4_general_ci,
   `statut` enum('complete','annulee','en_attente') COLLATE utf8mb4_general_ci DEFAULT 'complete',
   `type_transaction` enum('versement','retrait') COLLATE utf8mb4_general_ci NOT NULL,
+  `operateur` varchar(20) COLLATE utf8mb4_general_ci DEFAULT NULL,
   `idcompteimpact` int DEFAULT NULL,
   `idoperation` int DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
@@ -231,6 +248,13 @@ ALTER TABLE `clients`
   ADD KEY `idx_client_agence` (`idag`);
 
 --
+-- Indexes for table `app`
+--
+ALTER TABLE `app`
+  ADD PRIMARY KEY (`idapp`),
+  ADD UNIQUE KEY `api_key` (`api_key`);
+
+--
 -- Indexes for table `compte`
 --
 ALTER TABLE `compte`
@@ -266,6 +290,7 @@ ALTER TABLE `transaction`
   ADD PRIMARY KEY (`idtransaction`),
   ADD KEY `FK_TRANSACTION_COMPTE` (`idcompte`),
   ADD KEY `FK_TRANSACTION_USER` (`iduser`),
+  ADD KEY `idx_transaction_operateur` (`operateur`),
   ADD KEY `compteImpact` (`idcompteimpact`);
 
 --
@@ -299,6 +324,12 @@ ALTER TABLE `agence`
 --
 ALTER TABLE `clients`
   MODIFY `idclient` int NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `app`
+--
+ALTER TABLE `app`
+  MODIFY `idapp` int NOT NULL AUTO_INCREMENT;
 
 --
 -- AUTO_INCREMENT for table `compte`

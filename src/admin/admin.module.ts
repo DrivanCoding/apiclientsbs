@@ -5,9 +5,27 @@ import { AdminService } from './admin.service';
 import { Agence } from '../entities/agence.entity';
 import { User } from '../entities/user.entity';
 import { Compte } from '../entities/compte.entity';
+import { Client } from '../entities/client.entity';
+import { Typecompte } from '../entities/typecompte.entity';
+import { Transaction } from '../entities/transaction.entity';
+import { ListeOperator } from '../entities/liste-operator.entity';
+import { Setting } from '../entities/setting.entity';
+import { AppEntity } from '../entities/app.entity';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Agence, User, Compte])],
+  imports: [
+    TypeOrmModule.forFeature([
+      Agence,
+      User,
+      Compte,
+      Client,
+      Typecompte,
+      Transaction,
+      ListeOperator,
+      Setting,
+      AppEntity,
+    ]),
+  ],
   controllers: [AdminController],
   providers: [AdminService],
 })

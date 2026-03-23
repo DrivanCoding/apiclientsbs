@@ -11,7 +11,14 @@ export class TypecomptesService {
   ) {}
 
   create(payload: Partial<Typecompte>) {
-    return this.repository.save(payload);
+    const normalized: Partial<Typecompte> = {
+      ...payload,
+      idcategorie: payload.idcategorie ?? 1,
+      numero: payload.numero ?? 1,
+      type: payload.type ?? '1',
+      taux_interet: payload.taux_interet ?? '0.00',
+    };
+    return this.repository.save(normalized);
   }
 
   findAll() {

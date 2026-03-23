@@ -1,5 +1,4 @@
 import {
-  IsNotEmpty,
   IsNumber,
   IsOptional,
   IsPositive,
@@ -8,22 +7,23 @@ import {
   Min,
 } from 'class-validator';
 
-export class CreateAgenceCompteDto {
+export class UpdateAgenceCompteDto {
+  @IsOptional()
   @IsNumber()
   @Min(1)
-  idtype: number;
+  idtype?: number;
 
   @IsOptional()
   @IsNumber()
   @IsPositive()
-  solde_initial?: number;
+  solde?: number;
 
   @IsOptional()
   @IsString()
   numero_compte?: string;
 
+  @IsOptional()
   @IsString()
-  @IsNotEmpty()
   @Matches(/^\d{4,6}$/)
-  pin_code: string;
+  pin_code?: string;
 }

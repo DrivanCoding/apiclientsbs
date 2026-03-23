@@ -32,4 +32,7 @@ export class Transaction {
 
  @Column({ type: 'enum', enum: ['versement', 'retrait'] })
  type_transaction: 'versement' | 'retrait';
+
+ @Column({ length: 20, nullable: true })
+ operateur?: string;
 }

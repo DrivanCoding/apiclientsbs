@@ -10,12 +10,14 @@ import { DataSource, EntityManager, Repository } from 'typeorm';
 import { Client } from '../entities/client.entity';
 import { Compte } from '../entities/compte.entity';
 import { Notification } from '../entities/notification.entity';
+import { Setting } from '../entities/setting.entity';
 import { Transaction } from '../entities/transaction.entity';
 import { PaynoteService } from '../paynote/paynote.service';
 import { DepositDto } from './dto/deposit.dto';
 import { PreouvertureDto } from './dto/preouverture.dto';
 
 const SYSTEM_USER_ID = 1;
+type PaymentDecision = 'success' | 'pending' | 'failed' | 'unknown';
 
 @Injectable()
 export class TransactionsService {
@@ -26,6 +28,8 @@ export class TransactionsService {
     private readonly compteRepository: Repository<Compte>,
     @InjectRepository(Client)
     private readonly clientRepository: Repository<Client>,
+    @InjectRepository(Setting)
+    private readonly settingRepository: Repository<Setting>,
     private readonly dataSource: DataSource,
     private readonly paynoteService: PaynoteService,
   ) {}
@@ -60,7 +64,7 @@ export class TransactionsService {
     }
 
     const effectiveClientId = authenticatedClientId;
-    const normalizedOperator = this.normalizeOperator(dto.operateur);
+    const normalizedOperator = await this.normalizeOperator(dto.operateur);
     const references =
       dto.references?.trim() ||
       `COLL-${Date.now()}-${Math.floor(Math.random() * 10000)
@@ -77,9 +81,6 @@ export class TransactionsService {
       references,
       description,
     });
-    if (!this.isPaymentSuccessful(payment)) {
-      throw new BadGatewayException('Paiement non confirme par Paynote');
-    }
 
     return this.dataSource.transaction(async manager => {
       const compte = await manager.findOne(Compte, {
@@ -98,6 +99,7 @@ export class TransactionsService {
         idcompte: compte.idcompte,
         montant_transaction: dto.montant_transaction.toFixed(2),
         type_transaction: 'versement',
+        operateur: normalizedOperator,
         statut: 'complete',
         references,
         description,
@@ -138,7 +140,7 @@ export class TransactionsService {
   }
 
   async preouvertureWithDeposit(dto: PreouvertureDto) {
-    const normalizedOperator = this.normalizeOperator(dto.operateur);
+    const normalizedOperator = await this.normalizeOperator(dto.operateur);
     const idtype = dto.idtype ?? this.resolveTypeCompte(dto.type_compte);
     const references = dto.references?.trim() || this.buildOrderId();
     const description =
@@ -190,6 +192,7 @@ export class TransactionsService {
         idcompte: savedCompte.idcompte,
         montant_transaction: dto.montant_initial.toFixed(2),
         type_transaction: 'versement',
+        operateur: normalizedOperator,
         statut: 'complete',
         references,
         description,
@@ -228,28 +231,98 @@ export class TransactionsService {
     try {
       if (payload.operateur === 'om') {
         const init = await this.paynoteService.initPayment();
-        const payToken = init?.data?.payToken;
+        const payToken = this.extractStringField(init, ['payToken']);
         if (!payToken) {
           throw new BadGatewayException(
             'Initialisation Orange Money invalide (payToken absent)',
           );
         }
-        return this.paynoteService.pay({
+
+        const payment = await this.paynoteService.pay({
           amount: payload.montant,
           subscriberMsisdn: payload.numeroTelephone,
-          orderId: payload.references,
+          orderId: this.normalizeOrderId(payload.references, 20),
           description: payload.description,
           payToken,
         });
+
+        const decision = this.getPaymentDecision(payment);
+        if (decision === 'success') {
+          return { init, payment };
+        }
+        if (decision === 'failed') {
+          throw new BadGatewayException(
+            `Paiement Orange rejete: ${this.summarizePaymentState(payment)}`,
+          );
+        }
+
+        const confirmed = await this.pollPaymentStatus(async () =>
+          this.paynoteService.getPaymentStatus(payToken),
+        );
+        if (confirmed.decision !== 'success') {
+          throw new BadGatewayException(
+            `Paiement Orange en attente/non confirme: ${this.summarizePaymentState(
+              confirmed.payload,
+            )}`,
+          );
+        }
+
+        return { init, payment, status: confirmed.payload };
       }
 
-      return this.paynoteService.mtnPay({
+      const payment = await this.paynoteService.mtnPay({
         amount: payload.montant,
         subscriberMsisdn: payload.numeroTelephone,
         orderId: payload.references,
         description: payload.description,
         paymentMethod: 'MTN_CMR',
       });
+
+      const immediateDecision = this.getPaymentDecision(payment);
+      if (immediateDecision === 'failed') {
+        throw new BadGatewayException(
+          `Paiement MTN rejete: ${this.summarizePaymentState(payment)}`,
+        );
+      }
+
+      const messageId = this.extractStringField(payment, [
+        'MessageId',
+        'message_id',
+        'messageId',
+      ]);
+      if (!messageId) {
+        if (immediateDecision === 'success') return { payment };
+        throw new BadGatewayException(
+          'Paiement MTN initie mais aucun message_id retourne pour verifier le statut',
+        );
+      }
+
+      const confirmed = await this.pollPaymentStatus(async () =>
+        this.paynoteService.mtnPaymentStatus({ messageId }),
+      );
+      if (confirmed.decision === 'success') {
+        return { payment, status: confirmed.payload };
+      }
+
+      // On MTN, Paynote can keep returning "Pay Request Accepted" while the user
+      // has already validated on handset. We accept provider-level 200/accepted
+      // to avoid false negatives and keep business flow moving.
+      if (
+        confirmed.decision === 'pending' &&
+        this.isProviderAccepted(confirmed.payload)
+      ) {
+        return {
+          payment,
+          status: confirmed.payload,
+          provider_state: 'accepted_pending',
+        };
+      }
+
+      throw new BadGatewayException(
+        `Paiement MTN en attente/non confirme: ${this.summarizePaymentState(
+          confirmed.payload,
+        )}`,
+      );
     } catch (error) {
       const message =
         error instanceof Error ? error.message : 'Paiement mobile indisponible';
@@ -257,12 +330,13 @@ export class TransactionsService {
     }
   }
 
-  private normalizeOperator(value: string): 'om' | 'momo' {
+  private async normalizeOperator(value: string): Promise<'om' | 'momo'> {
     const normalized = String(value || '').trim().toLowerCase();
+    let resolved: 'om' | 'momo';
+
     if (['om', 'orange', 'orange money'].includes(normalized)) {
-      return 'om';
-    }
-    if (
+      resolved = 'om';
+    } else if (
       [
         'momo',
         'mtn',
@@ -272,58 +346,257 @@ export class TransactionsService {
         'mobilemoney',
       ].includes(normalized)
     ) {
-      return 'momo';
-    }
-    throw new BadRequestException('Operateur invalide. Utilisez om ou momo');
-  }
-
-  private isPaymentSuccessful(payment: unknown): boolean {
-    const candidates = this.extractStatusCandidates(payment);
-    if (candidates.length === 0) return false;
-
-    const successWords = ['success', 'succeeded', 'complete', 'completed', 'ok', 'approved', 'paid'];
-    const failedWords = ['fail', 'failed', 'error', 'cancel', 'annule', 'reject', 'declined', 'pending'];
-
-    for (const value of candidates) {
-      if (failedWords.some(word => value.includes(word))) {
-        return false;
-      }
-      if (successWords.some(word => value.includes(word))) {
-        return true;
-      }
+      resolved = 'momo';
+    } else {
+      throw new BadRequestException('Operateur invalide. Utilisez om ou momo');
     }
 
-    return false;
+    const activeOperators = await this.readActiveOperatorCodes();
+    if (activeOperators.size > 0 && !activeOperators.has(resolved)) {
+      throw new BadRequestException(
+        `Operateur ${resolved} desactive. Activez-le dans les parametres.`,
+      );
+    }
+
+    return resolved;
   }
 
-  private extractStatusCandidates(payload: unknown): string[] {
-    const values: string[] = [];
+  private async readActiveOperatorCodes() {
+    const rows = await this.settingRepository.find({
+      order: { idsetting: 'DESC' },
+      take: 1,
+    });
+
+    const latest = rows[0];
+    if (!latest || !Array.isArray(latest.operator_actif)) {
+      return new Set<string>();
+    }
+
+    return new Set(
+      latest.operator_actif
+        .map((item) => String(item?.operateur || '').trim().toLowerCase())
+        .filter(Boolean),
+    );
+  }
+
+  private getPaymentDecision(payment: unknown): PaymentDecision {
+    const keyValues = this.extractStatusKeyValues(payment);
+    if (keyValues.length === 0) return 'unknown';
+
+    const values = keyValues.map(item => item.value);
+    const statusValue = keyValues.find(item => item.key === 'status')?.value || '';
+    const bodyValue = keyValues.find(item => item.key === 'body')?.value || '';
+    const confirmTxnStatus =
+      keyValues.find(item => item.key === 'confirmtxnstatus')?.value || '';
+    const errorCode =
+      keyValues.find(item => item.key === 'errorcode')?.value ||
+      keyValues.find(item => item.key === 'statuscode')?.value ||
+      '';
+
+    const successWords = [
+      'successful',
+      'successfull',
+      'success',
+      'succeeded',
+      'complete',
+      'completed',
+      'approved',
+      'paid',
+    ];
+    const failedWords = [
+      'fail',
+      'failed',
+      'cancel',
+      'annule',
+      'reject',
+      'declined',
+      'timeout',
+      'denied',
+      'insufficient',
+      'forbidden',
+    ];
+    const pendingWords = [
+      'pending',
+      'initiated',
+      'accepted',
+      'processing',
+      'in progress',
+      'waiting',
+    ];
+
+    if (failedWords.some(word => values.some(value => value.includes(word)))) {
+      return 'failed';
+    }
+
+    if (confirmTxnStatus === '200') return 'success';
+
+    if (successWords.some(word => statusValue.includes(word))) {
+      return 'success';
+    }
+
+    if (pendingWords.some(word => statusValue.includes(word))) {
+      return 'pending';
+    }
+
+    if (bodyValue.includes('pay request accepted')) {
+      return 'pending';
+    }
+
+    if (errorCode && !['200', '201'].includes(errorCode)) {
+      return 'failed';
+    }
+    if (errorCode && ['200', '201'].includes(errorCode)) {
+      return 'pending';
+    }
+
+    if (successWords.some(word => values.some(value => value.includes(word)))) {
+      return 'success';
+    }
+    if (pendingWords.some(word => values.some(value => value.includes(word)))) {
+      return 'pending';
+    }
+
+    return 'unknown';
+  }
+
+  private extractStatusKeyValues(payload: unknown): Array<{ key: string; value: string }> {
+    const values: Array<{ key: string; value: string }> = [];
     const walk = (node: unknown) => {
       if (!node) return;
-      if (typeof node === 'string') {
-        values.push(node.toLowerCase());
-        return;
-      }
       if (typeof node !== 'object') return;
 
       const record = node as Record<string, unknown>;
-      const keys = ['status', 'statut', 'message', 'code', 'result', 'state'];
-      for (const key of keys) {
-        const raw = record[key];
-        if (typeof raw === 'string') {
-          values.push(raw.toLowerCase());
-        }
-      }
+      for (const [rawKey, rawValue] of Object.entries(record)) {
+        const key = rawKey.toLowerCase();
+        if (typeof rawValue === 'string' || typeof rawValue === 'number') {
+          const value = String(rawValue).trim();
+          values.push({ key, value: value.toLowerCase() });
 
-      for (const value of Object.values(record)) {
-        if (value && typeof value === 'object') {
-          walk(value);
+          // Paynote may return JSON encoded as a string in `message`.
+          // Decode and inspect it to detect real status/error fields.
+          if (typeof rawValue === 'string') {
+            const firstChar = value[0];
+            if (firstChar === '{' || firstChar === '[') {
+              try {
+                const parsed = JSON.parse(value);
+                if (parsed && typeof parsed === 'object') {
+                  walk(parsed);
+                }
+              } catch {
+                // Ignore invalid JSON-like strings
+              }
+            }
+          }
+        }
+        if (rawValue && typeof rawValue === 'object') {
+          walk(rawValue);
         }
       }
     };
 
     walk(payload);
     return values;
+  }
+
+  private extractStringField(payload: unknown, keys: string[]): string | null {
+    const normalizedKeys = keys.map(key => key.toLowerCase());
+    let found: string | null = null;
+
+    const walk = (node: unknown) => {
+      if (!node || found) return;
+      if (typeof node !== 'object') return;
+
+      const record = node as Record<string, unknown>;
+      for (const [rawKey, rawValue] of Object.entries(record)) {
+        const key = rawKey.toLowerCase();
+        if (
+          normalizedKeys.includes(key) &&
+          (typeof rawValue === 'string' || typeof rawValue === 'number')
+        ) {
+          const value = String(rawValue).trim();
+          if (value) {
+            found = value;
+            return;
+          }
+        }
+
+        if (rawValue && typeof rawValue === 'object') {
+          walk(rawValue);
+        }
+      }
+    };
+
+    walk(payload);
+    return found;
+  }
+
+  private summarizePaymentState(payload: unknown): string {
+    const items = this.extractStatusKeyValues(payload);
+    if (!items.length) return 'reponse vide';
+
+    const interesting = new Set([
+      'status',
+      'body',
+      'message',
+      'errorcode',
+      'statuscode',
+      'confirmtxnstatus',
+      'txnstatus',
+      'inittxnstatus',
+    ]);
+    const compact = items
+      .filter(item => interesting.has(item.key))
+      .slice(0, 6)
+      .map(item => `${item.key}=${item.value}`);
+
+    return compact.length ? compact.join(', ') : 'statut non interpretable';
+  }
+
+  private isProviderAccepted(payload: unknown): boolean {
+    const items = this.extractStatusKeyValues(payload);
+    if (!items.length) return false;
+
+    const byKey = (key: string) => items.find(item => item.key === key)?.value || '';
+    const errorCode = byKey('errorcode') || byKey('statuscode');
+    const body = byKey('body');
+
+    const codeAccepted = ['200', '201'].includes(errorCode);
+    const bodyAccepted =
+      body.includes('pay request accepted') ||
+      body.includes('accepted');
+
+    return codeAccepted || bodyAccepted;
+  }
+
+  private async pollPaymentStatus(
+    fetchStatus: () => Promise<unknown>,
+  ): Promise<{ decision: PaymentDecision; payload: unknown }> {
+    const attempts = Math.max(
+      1,
+      Number(process.env.PAYNOTE_STATUS_POLL_ATTEMPTS ?? 20),
+    );
+    const delayMs = Math.max(
+      250,
+      Number(process.env.PAYNOTE_STATUS_POLL_DELAY_MS ?? 3000),
+    );
+
+    let lastPayload: unknown = null;
+    let lastDecision: PaymentDecision = 'unknown';
+
+    for (let i = 0; i < attempts; i++) {
+      lastPayload = await fetchStatus();
+      lastDecision = this.getPaymentDecision(lastPayload);
+
+      if (lastDecision === 'success' || lastDecision === 'failed') {
+        return { decision: lastDecision, payload: lastPayload };
+      }
+
+      if (i < attempts - 1) {
+        await new Promise(resolve => setTimeout(resolve, delayMs));
+      }
+    }
+
+    return { decision: lastDecision, payload: lastPayload };
   }
 
   private resolveTypeCompte(value?: string): number {
@@ -374,6 +647,18 @@ export class TransactionsService {
       .toString()
       .padStart(4, '0');
     return `PRE-${now}-${random}`;
+  }
+
+  private normalizeOrderId(value: string, maxLength: number) {
+    const raw = String(value || '').trim().toUpperCase();
+    const compact = raw.replace(/[^A-Z0-9_-]/g, '');
+    if (!compact) {
+      return `ORD${Date.now().toString().slice(-8)}`;
+    }
+    if (compact.length <= maxLength) {
+      return compact;
+    }
+    return compact.slice(0, maxLength);
   }
 
   private buildDepositNotificationMessage(payload: {

@@ -3,6 +3,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { Agence } from './entities/agence.entity';
+import { AppEntity } from './entities/app.entity';
 import { Client } from './entities/client.entity';
 import { Compte } from './entities/compte.entity';
 import { ListeOperator } from './entities/liste-operator.entity';
@@ -32,6 +33,7 @@ import { NotificationsModule } from './notifications/notifications.module';
       database: process.env.DB_DATABASE ?? 'clientsbs',
       entities: [
         Agence,
+        AppEntity,
         Client,
         Compte,
         ListeOperator,

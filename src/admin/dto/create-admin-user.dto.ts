@@ -17,6 +17,10 @@ export class CreateAdminUserDto {
   @IsEmail()
   email?: string;
 
+  @IsOptional()
+  @IsString()
+  login?: string;
+
   @IsString()
   @IsNotEmpty()
   password: string;
