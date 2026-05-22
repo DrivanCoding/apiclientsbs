@@ -10,6 +10,9 @@ export class ListeOperator {
     nom: string;
     code: string;
     date_cration: string;
+    idtype?: number;
+    idtypecompte?: number;
+    idcompte?: number;
   }>;
 
   @Column({ type: 'datetime', default: () => 'CURRENT_TIMESTAMP' })

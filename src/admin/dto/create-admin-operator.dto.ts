@@ -1,4 +1,12 @@
-import { IsBoolean, IsNotEmpty, IsOptional, IsString, Length } from 'class-validator';
+import {
+  IsBoolean,
+  IsInt,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  Length,
+  Min,
+} from 'class-validator';
 
 export class CreateAdminOperatorDto {
   @IsString()
@@ -14,5 +22,8 @@ export class CreateAdminOperatorDto {
   @IsOptional()
   @IsBoolean()
   actif?: boolean;
-}
 
+  @IsInt()
+  @Min(1)
+  idtype: number;
+}

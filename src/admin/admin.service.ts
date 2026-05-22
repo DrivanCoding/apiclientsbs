@@ -35,7 +35,7 @@ import { AppEntity } from '../entities/app.entity';
 
 @Injectable()
 export class AdminService {
-  private readonly defaultTypeCompteForOperator = 1;
+  private readonly defaultOperatorTypeFallbackId = 1;
 
   constructor(
     @InjectRepository(Agence)
@@ -829,6 +829,8 @@ export class AdminService {
       .map((operator) => ({
         nom: operator.nom,
         code: operator.code,
+        idtype: operator.idtype,
+        idcompte: operator.idcompte,
         actif: activeCodes.has(operator.code),
         date_creation: operator.date_creation,
       }))
@@ -844,9 +846,40 @@ export class AdminService {
       throw new ConflictException('Ce code operateur existe deja');
     }
 
+    const typecompte = await this.typecompteRepository.findOneBy({
+      idtype: dto.idtype,
+    });
+    if (!typecompte) {
+      throw new NotFoundException('Type de compte introuvable');
+    }
+
+    const idcompte = await this.nextId(this.compteRepository, 'idcompte');
+    const numero_compte = this.generateOperatorNumeroCompte(code, idcompte);
+    const existingNumero = await this.compteRepository.findOneBy({
+      numero_compte,
+    });
+    if (existingNumero) {
+      throw new ConflictException(
+        'Impossible de creer le compte de gestion: numero deja utilise',
+      );
+    }
+
+    const compteGestion = this.compteRepository.create({
+      idcompte,
+      idtype: typecompte.idtype,
+      solde: '0.00',
+      numero_compte,
+      idclient: undefined,
+      idag: undefined,
+      pin_code: undefined,
+    });
+    await this.compteRepository.save(compteGestion);
+
     const operator = {
       nom: dto.nom.trim(),
       code,
+      idtype: typecompte.idtype,
+      idcompte,
       date_creation: new Date().toISOString(),
     };
 
@@ -855,7 +888,10 @@ export class AdminService {
 
     const shouldActivate = dto.actif ?? true;
     if (shouldActivate) {
-      await this.updateActiveOperator(code, true);
+      await this.updateActiveOperator(code, true, {
+        idtypecompte: operator.idtype,
+        idcompte: operator.idcompte,
+      });
     }
 
     return {
@@ -871,13 +907,16 @@ export class AdminService {
     await this.ensureOperatorSettingsStorage();
     const normalizedCode = this.normalizeOperatorCode(code);
     const operators = await this.readOperatorCatalogue();
-    const exists = operators.some((operator) => operator.code === normalizedCode);
+    const operator = operators.find((item) => item.code === normalizedCode);
 
-    if (!exists) {
+    if (!operator) {
       throw new NotFoundException('Operateur introuvable');
     }
 
-    await this.updateActiveOperator(normalizedCode, dto.actif);
+    await this.updateActiveOperator(normalizedCode, dto.actif, {
+      idtypecompte: operator.idtype ?? this.defaultOperatorTypeFallbackId,
+      idcompte: operator.idcompte,
+    });
     const nextOperators = await this.getSettingsOperators();
     return nextOperators.find((operator) => operator.code === normalizedCode);
   }
@@ -943,6 +982,15 @@ export class AdminService {
 
   private generateClientCode(idclient: number) {
     return `CLT${String(idclient).padStart(6, '0')}`;
+  }
+
+  private generateOperatorNumeroCompte(operatorCode: string, idcompte: number) {
+    const stamp = Date.now().toString().slice(-6);
+    const normalizedCode = this.normalizeOperatorCode(operatorCode)
+      .toUpperCase()
+      .slice(0, 4)
+      .padEnd(2, 'X');
+    return `OP${normalizedCode}${stamp}${String(idcompte).padStart(4, '0')}`;
   }
 
   private async hashPin(pin?: string) {
@@ -1070,17 +1118,32 @@ export class AdminService {
         nom: String(item?.nom || '').trim(),
         code: this.normalizeOperatorCode(String(item?.code || '')),
         date_creation: String(item?.date_cration || ''),
+        idtype:
+          Number(item?.idtype ?? item?.idtypecompte ?? this.defaultOperatorTypeFallbackId) ||
+          this.defaultOperatorTypeFallbackId,
+        idcompte:
+          item?.idcompte !== undefined && item?.idcompte !== null
+            ? Number(item.idcompte)
+            : undefined,
       }))
       .filter((item) => item.nom && item.code);
   }
 
   private async writeOperatorCatalogue(
-    operators: Array<{ nom: string; code: string; date_creation?: string }>,
+    operators: Array<{
+      nom: string;
+      code: string;
+      idtype: number;
+      idcompte?: number;
+      date_creation?: string;
+    }>,
   ) {
     const row = await this.getOrCreateOperatorCatalogueRow();
     row.liste_operator = operators.map((operator) => ({
       nom: operator.nom,
       code: this.normalizeOperatorCode(operator.code),
+      idtype: operator.idtype,
+      idcompte: operator.idcompte,
       date_cration: operator.date_creation || new Date().toISOString(),
     }));
     await this.listeOperatorRepository.save(row);
@@ -1097,7 +1160,11 @@ export class AdminService {
     );
   }
 
-  private async updateActiveOperator(code: string, actif: boolean) {
+  private async updateActiveOperator(
+    code: string,
+    actif: boolean,
+    metadata?: { idtypecompte?: number; idcompte?: number },
+  ) {
     const normalizedCode = this.normalizeOperatorCode(code);
     const row = await this.getOrCreateSettingRow();
     const current = Array.isArray(row.operator_actif) ? row.operator_actif : [];
@@ -1111,7 +1178,9 @@ export class AdminService {
           ...without,
           {
             operateur: normalizedCode,
-            idtypecompte: this.defaultTypeCompteForOperator,
+            idtypecompte:
+              metadata?.idtypecompte ?? this.defaultOperatorTypeFallbackId,
+            idcompte: metadata?.idcompte,
           },
         ]
       : without;

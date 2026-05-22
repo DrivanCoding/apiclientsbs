@@ -10,6 +10,8 @@ import {
 } from '@nestjs/common';
 import { Compte } from '../entities/compte.entity';
 import { ComptesService } from './comptes.service';
+import { ConfirmPinSetupDto } from './dto/confirm-pin-setup.dto';
+import { RequestPinOtpDto } from './dto/request-pin-otp.dto';
 import { VerifyComptePinDto } from './dto/verify-compte-pin.dto';
 
 @Controller('comptes')
@@ -47,6 +49,16 @@ export class ComptesController {
     @Body() payload: VerifyComptePinDto,
   ) {
     return this.service.verifyPinAndGetCompteDetail(id, payload);
+  }
+
+  @Post('pin/request-otp')
+  requestPinOtp(@Body() payload: RequestPinOtpDto) {
+    return this.service.requestPinSetupOtp(payload);
+  }
+
+  @Post('pin/confirm')
+  confirmPin(@Body() payload: ConfirmPinSetupDto) {
+    return this.service.confirmPinSetup(payload);
   }
 
   @Patch(':id')

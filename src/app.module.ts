@@ -6,6 +6,7 @@ import { Agence } from './entities/agence.entity';
 import { AppEntity } from './entities/app.entity';
 import { Client } from './entities/client.entity';
 import { Compte } from './entities/compte.entity';
+import { ComptePinOtp } from './entities/compte-pin-otp.entity';
 import { ListeOperator } from './entities/liste-operator.entity';
 import { Notification } from './entities/notification.entity';
 import { Setting } from './entities/setting.entity';
@@ -36,6 +37,7 @@ import { NotificationsModule } from './notifications/notifications.module';
         AppEntity,
         Client,
         Compte,
+        ComptePinOtp,
         ListeOperator,
         Notification,
         Setting,

@@ -6,7 +6,11 @@ export class Setting {
   idsetting: number;
 
   @Column({ type: 'json' })
-  operator_actif: Array<{ operateur: string; idtypecompte: number }>;
+  operator_actif: Array<{
+    operateur: string;
+    idtypecompte: number;
+    idcompte?: number;
+  }>;
 
   @Column({ type: 'datetime', default: () => 'CURRENT_TIMESTAMP' })
   date_creation: Date;

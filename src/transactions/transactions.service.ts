@@ -6,7 +6,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, EntityManager, Repository } from 'typeorm';
+import { DataSource, EntityManager, QueryFailedError, Repository } from 'typeorm';
 import { Client } from '../entities/client.entity';
 import { Compte } from '../entities/compte.entity';
 import { Notification } from '../entities/notification.entity';
@@ -131,12 +131,44 @@ export class TransactionsService {
   }
 
   async findByClient(idclient: number) {
-    return this.repository
-      .createQueryBuilder('transaction')
-      .innerJoin(Compte, 'compte', 'compte.idcompte = transaction.idcompte')
-      .where('compte.idclient = :idclient', { idclient })
-      .orderBy('transaction.date_transaction', 'DESC')
-      .getMany();
+    try {
+      return await this.repository
+        .createQueryBuilder('transaction')
+        .innerJoin(Compte, 'compte', 'compte.idcompte = transaction.idcompte')
+        .where('compte.idclient = :idclient', { idclient })
+        .orderBy('transaction.date_transaction', 'DESC')
+        .getMany();
+    } catch (error) {
+      if (!this.isMissingOperateurColumnError(error)) {
+        throw error;
+      }
+
+      // Backward compatibility when migration for transaction.operateur is not applied.
+      const rows = await this.dataSource.query(
+        `
+        SELECT
+          t.idtransaction,
+          t.iduser,
+          t.idcompte,
+          t.idcompteimpact,
+          t.type_transaction,
+          t.montant_transaction,
+          t.statut,
+          t.references,
+          t.description,
+          t.date_transaction
+        FROM transaction t
+        INNER JOIN compte c ON c.idcompte = t.idcompte
+        WHERE c.idclient = ?
+        ORDER BY t.date_transaction DESC
+        `,
+        [idclient],
+      );
+
+      return Array.isArray(rows)
+        ? rows.map((row) => ({ ...row, operateur: null }))
+        : [];
+    }
   }
 
   async preouvertureWithDeposit(dto: PreouvertureDto) {
@@ -668,5 +700,14 @@ export class TransactionsService {
     const rounded = Math.round(payload.amount);
     const formatted = new Intl.NumberFormat('fr-FR').format(rounded);
     return `Votre versement de ${formatted} XAF sur le compte ${payload.numeroCompte} a ete confirme.`;
+  }
+
+  private isMissingOperateurColumnError(error: unknown) {
+    const mysqlCode = (error as { code?: string })?.code;
+    return (
+      error instanceof QueryFailedError &&
+      (mysqlCode === 'ER_BAD_FIELD_ERROR' ||
+        String((error as Error).message || '').toLowerCase().includes('operateur'))
+    );
   }
 }
