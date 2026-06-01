@@ -14,8 +14,8 @@ export class Compte {
   @Column({ length: 55 })
   numero_compte: string;
 
-  @Column({ length: 255, nullable: true })
-  pin_code?: string;
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  pin_code?: string | null;
 
   @Column({ nullable: true })
   idclient?: number;

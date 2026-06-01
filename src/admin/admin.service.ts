@@ -32,6 +32,7 @@ import { Transaction } from '../entities/transaction.entity';
 import { ListeOperator } from '../entities/liste-operator.entity';
 import { Setting } from '../entities/setting.entity';
 import { AppEntity } from '../entities/app.entity';
+import { Notification } from '../entities/notification.entity';
 
 @Injectable()
 export class AdminService {
@@ -56,6 +57,8 @@ export class AdminService {
     private readonly settingRepository: Repository<Setting>,
     @InjectRepository(AppEntity)
     private readonly appRepository: Repository<AppEntity>,
+    @InjectRepository(Notification)
+    private readonly notificationRepository: Repository<Notification>,
   ) {}
 
   async createUser(dto: CreateAdminUserDto) {
@@ -419,6 +422,10 @@ export class AdminService {
       numero: dto.numero ?? 1,
       type: dto.type ?? '1',
       idparent: dto.idparent,
+      mobile_sync_enabled: dto.mobile_sync_enabled ?? 0,
+      mobile_can_open: dto.mobile_can_open ?? 0,
+      mobile_can_view: dto.mobile_can_view ?? 1,
+      mobile_can_deposit: dto.mobile_can_deposit ?? 1,
     });
 
     return this.typecompteRepository.save(typecompte);
@@ -469,6 +476,18 @@ export class AdminService {
     if (dto.numero !== undefined) updatePayload.numero = dto.numero;
     if (dto.type !== undefined) updatePayload.type = dto.type;
     if (dto.idparent !== undefined) updatePayload.idparent = dto.idparent;
+    if (dto.mobile_sync_enabled !== undefined) {
+      updatePayload.mobile_sync_enabled = dto.mobile_sync_enabled;
+    }
+    if (dto.mobile_can_open !== undefined) {
+      updatePayload.mobile_can_open = dto.mobile_can_open;
+    }
+    if (dto.mobile_can_view !== undefined) {
+      updatePayload.mobile_can_view = dto.mobile_can_view;
+    }
+    if (dto.mobile_can_deposit !== undefined) {
+      updatePayload.mobile_can_deposit = dto.mobile_can_deposit;
+    }
 
     if (Object.keys(updatePayload).length === 0) {
       throw new BadRequestException('Aucune donnee a mettre a jour');
@@ -652,6 +671,23 @@ export class AdminService {
     });
 
     const saved = await this.compteRepository.save(compte);
+
+    if (dto.solde_initial !== undefined && dto.solde_initial > 0) {
+      try {
+        const formatted = new Intl.NumberFormat('fr-FR').format(Math.round(dto.solde_initial));
+        const notification = this.notificationRepository.create({
+          idclient,
+          titre: 'Versement synchronise',
+          message: `Votre nouveau compte ${numeroCompte} a ete credite d'un versement initial de ${formatted} XAF (Synchronisation caisse/collecte).`,
+          type: 'versement',
+          lu: 0,
+        });
+        await this.notificationRepository.save(notification);
+      } catch (err) {
+        console.error('Failed to create initial balance sync notification:', err);
+      }
+    }
+
     return this.toCompteResponse(saved);
   }
 
@@ -685,7 +721,17 @@ export class AdminService {
       updatePayload.idtype = dto.idtype;
     }
 
-    if (dto.solde !== undefined) updatePayload.solde = dto.solde.toFixed(2);
+    let isVersementSync = false;
+    let syncDiff = 0;
+    if (dto.solde !== undefined) {
+      const oldSolde = parseFloat(compte.solde ?? '0');
+      const newSolde = parseFloat(dto.solde.toFixed(2));
+      if (newSolde > oldSolde) {
+        isVersementSync = true;
+        syncDiff = newSolde - oldSolde;
+      }
+      updatePayload.solde = dto.solde.toFixed(2);
+    }
 
     if (dto.numero_compte !== undefined) {
       const numeroCompte = dto.numero_compte.trim();
@@ -721,6 +767,22 @@ export class AdminService {
       throw new NotFoundException('Compte client introuvable apres mise a jour');
     }
 
+    if (isVersementSync && syncDiff > 0) {
+      try {
+        const formatted = new Intl.NumberFormat('fr-FR').format(Math.round(syncDiff));
+        const notification = this.notificationRepository.create({
+          idclient,
+          titre: 'Versement synchronise',
+          message: `Votre compte ${compte.numero_compte} a ete credite d'un versement de ${formatted} XAF (Synchronisation caisse/collecte).`,
+          type: 'versement',
+          lu: 0,
+        });
+        await this.notificationRepository.save(notification);
+      } catch (err) {
+        console.error('Failed to create balance sync notification:', err);
+      }
+    }
+
     return this.toCompteResponse(updated);
   }
 
@@ -729,6 +791,20 @@ export class AdminService {
     await this.compteRepository.delete({ idcompte, idclient });
 
     return { success: true, idcompte, idclient };
+  }
+
+  async resetComptePinForClient(idclient: number, idcompte: number) {
+    const compte = await this.findClientCompteByIdOrFail(idclient, idcompte);
+
+    await this.compteRepository.update({ idcompte, idclient }, { pin_code: null });
+
+    const updated = await this.findClientCompteByIdOrFail(idclient, idcompte);
+    return {
+      success: true,
+      message:
+        'Code PIN reinitialise. Le client peut configurer un nouveau code PIN.',
+      compte: updated ? this.toCompteResponse(updated) : this.toCompteResponse(compte),
+    };
   }
 
   async getDepositStatsByClient(limit = 10) {

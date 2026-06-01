@@ -1,7 +1,6 @@
 import {
   IsNumber,
   IsOptional,
-  IsPositive,
   IsString,
   Matches,
   Min,
@@ -15,7 +14,7 @@ export class UpdateClientCompteDto {
 
   @IsOptional()
   @IsNumber()
-  @IsPositive()
+  @Min(0)
   solde?: number;
 
   @IsOptional()
@@ -32,4 +31,3 @@ export class UpdateClientCompteDto {
   @Min(1)
   idag?: number;
 }
-

@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -8,13 +9,43 @@ import {
   Patch,
   Post,
   Req,
+  UploadedFiles,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileFieldsInterceptor } from '@nestjs/platform-express';
+import { diskStorage } from 'multer';
+import { extname, join } from 'path';
+import { existsSync, mkdirSync } from 'fs';
 import { Transaction } from '../entities/transaction.entity';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { TransactionsService } from './transactions.service';
 import { DepositDto } from './dto/deposit.dto';
 import { PreouvertureDto } from './dto/preouverture.dto';
+
+const preouvertureUploadDir = join(process.cwd(), 'uploads', 'preouverture');
+
+function ensurePreouvertureUploadDir() {
+  if (!existsSync(preouvertureUploadDir)) {
+    mkdirSync(preouvertureUploadDir, { recursive: true });
+  }
+}
+
+function imageFileFilter(
+  _req: unknown,
+  file: { mimetype: string },
+  callback: (error: Error | null, acceptFile: boolean) => void,
+) {
+  if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.mimetype)) {
+    return callback(
+      new BadRequestException(
+        'Les documents doivent etre des images JPG, PNG ou WebP.',
+      ),
+      false,
+    );
+  }
+  return callback(null, true);
+}
 
 @Controller('transactions')
 export class TransactionsController {
@@ -27,14 +58,49 @@ export class TransactionsController {
 
   @Post('collecte')
   @UseGuards(JwtAuthGuard)
-  collect(@Body() dto: DepositDto, @Req() req: { user?: { idclient?: number } }) {
+  collect(
+    @Body() dto: DepositDto,
+    @Req() req: { user?: { idclient?: number } },
+  ) {
     const idclient = Number(req.user?.idclient || 0);
     return this.service.deposit(dto, idclient);
   }
 
   @Post('preouverture')
-  preouverture(@Body() dto: PreouvertureDto) {
-    return this.service.preouvertureWithDeposit(dto);
+  @UseInterceptors(
+    FileFieldsInterceptor(
+      [
+        { name: 'photo_cni', maxCount: 1 },
+        { name: 'photo_profil', maxCount: 1 },
+        { name: 'signature', maxCount: 1 },
+      ],
+      {
+        storage: diskStorage({
+          destination: (_req, _file, callback) => {
+            ensurePreouvertureUploadDir();
+            callback(null, preouvertureUploadDir);
+          },
+          filename: (_req, file, callback) => {
+            const uniqueSuffix = `${Date.now()}-${Math.round(
+              Math.random() * 1e9,
+            )}`;
+            callback(
+              null,
+              `${file.fieldname}-${uniqueSuffix}${extname(file.originalname)}`,
+            );
+          },
+        }),
+        fileFilter: imageFileFilter,
+        limits: { fileSize: 5 * 1024 * 1024 },
+      },
+    ),
+  )
+  preouverture(
+    @Body() dto: PreouvertureDto,
+    @UploadedFiles()
+    files: Record<string, Array<{ filename: string; path: string }>>,
+  ) {
+    return this.service.preouvertureWithDeposit(dto, files);
   }
 
   @Get()

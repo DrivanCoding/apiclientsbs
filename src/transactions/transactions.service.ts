@@ -2,25 +2,38 @@ import {
   BadGatewayException,
   BadRequestException,
   Injectable,
+  Logger,
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, EntityManager, QueryFailedError, Repository } from 'typeorm';
+import {
+  DataSource,
+  EntityManager,
+  QueryFailedError,
+  Repository,
+} from 'typeorm';
 import { Client } from '../entities/client.entity';
 import { Compte } from '../entities/compte.entity';
 import { Notification } from '../entities/notification.entity';
 import { Setting } from '../entities/setting.entity';
 import { Transaction } from '../entities/transaction.entity';
+import { Typecompte } from '../entities/typecompte.entity';
 import { PaynoteService } from '../paynote/paynote.service';
 import { DepositDto } from './dto/deposit.dto';
 import { PreouvertureDto } from './dto/preouverture.dto';
 
 const SYSTEM_USER_ID = 1;
 type PaymentDecision = 'success' | 'pending' | 'failed' | 'unknown';
+type UploadedPreouvertureFiles = Record<
+  string,
+  Array<{ filename: string; path: string }>
+>;
 
 @Injectable()
 export class TransactionsService {
+  private readonly logger = new Logger(TransactionsService.name);
+
   constructor(
     @InjectRepository(Transaction)
     private readonly repository: Repository<Transaction>,
@@ -30,6 +43,8 @@ export class TransactionsService {
     private readonly clientRepository: Repository<Client>,
     @InjectRepository(Setting)
     private readonly settingRepository: Repository<Setting>,
+    @InjectRepository(Typecompte)
+    private readonly typeCompteRepository: Repository<Typecompte>,
     private readonly dataSource: DataSource,
     private readonly paynoteService: PaynoteService,
   ) {}
@@ -82,7 +97,7 @@ export class TransactionsService {
       description,
     });
 
-    return this.dataSource.transaction(async manager => {
+    return this.dataSource.transaction(async (manager) => {
       const compte = await manager.findOne(Compte, {
         where: { idcompte: dto.idcompte },
       });
@@ -90,6 +105,7 @@ export class TransactionsService {
       if (!compte || compte.idclient !== effectiveClientId) {
         throw new NotFoundException('Compte introuvable');
       }
+      await this.assertMobileDepositAllowed(compte.idtype, manager);
 
       const currentSolde = parseFloat(compte.solde ?? '0');
       const newSolde = currentSolde + dto.montant_transaction;
@@ -135,7 +151,14 @@ export class TransactionsService {
       return await this.repository
         .createQueryBuilder('transaction')
         .innerJoin(Compte, 'compte', 'compte.idcompte = transaction.idcompte')
+        .innerJoin(
+          Typecompte,
+          'typecompte',
+          'typecompte.idtype = compte.idtype',
+        )
         .where('compte.idclient = :idclient', { idclient })
+        .andWhere('typecompte.mobile_sync_enabled = 1')
+        .andWhere('typecompte.mobile_can_view = 1')
         .orderBy('transaction.date_transaction', 'DESC')
         .getMany();
     } catch (error) {
@@ -159,7 +182,10 @@ export class TransactionsService {
           t.date_transaction
         FROM transaction t
         INNER JOIN compte c ON c.idcompte = t.idcompte
+        INNER JOIN typecompte tc ON tc.idtype = c.idtype
         WHERE c.idclient = ?
+          AND tc.mobile_sync_enabled = 1
+          AND tc.mobile_can_view = 1
         ORDER BY t.date_transaction DESC
         `,
         [idclient],
@@ -171,7 +197,32 @@ export class TransactionsService {
     }
   }
 
-  async preouvertureWithDeposit(dto: PreouvertureDto) {
+  async preouvertureWithDeposit(
+    dto: PreouvertureDto,
+    files: UploadedPreouvertureFiles = {},
+  ) {
+    const photoProfil = this.uploadedFileUrl(files, 'photo_profil');
+    const signature = this.uploadedFileUrl(files, 'signature');
+    const photoCni = this.uploadedFileUrl(files, 'photo_cni');
+
+    if (!photoProfil || !signature) {
+      this.logger.warn(
+        `Pre-ouverture sans images requises: profil=${Boolean(
+          photoProfil,
+        )}, signature=${Boolean(signature)}`,
+      );
+      throw new BadRequestException(
+        'La photo de profil et la signature sont obligatoires.',
+      );
+    }
+
+    if (dto.type_piece && !photoCni) {
+      this.logger.warn('Pre-ouverture avec piece sans photo CNI');
+      throw new BadRequestException(
+        'La photo de la piece d identite est obligatoire.',
+      );
+    }
+
     const normalizedOperator = await this.normalizeOperator(dto.operateur);
     const idtype = dto.idtype ?? this.resolveTypeCompte(dto.type_compte);
     const references = dto.references?.trim() || this.buildOrderId();
@@ -187,7 +238,7 @@ export class TransactionsService {
       description,
     });
 
-    return this.dataSource.transaction(async manager => {
+    return this.dataSource.transaction(async (manager) => {
       const nextClientId = await this.nextId(manager, 'clients', 'idclient');
       const nextCompteId = await this.nextId(manager, 'compte', 'idcompte');
 
@@ -205,6 +256,11 @@ export class TransactionsService {
         email: dto.email.trim().toLowerCase(),
         telephone_principal: dto.telephone_principal.trim(),
         mot_de_passe: dto.mot_de_passe,
+        photo_identite: photoProfil,
+        signature,
+        commentaires: photoCni
+          ? JSON.stringify({ photo_cni: photoCni })
+          : undefined,
         idag: dto.idag,
       });
       const savedClient = await manager.save(client);
@@ -215,7 +271,10 @@ export class TransactionsService {
         solde: dto.montant_initial.toFixed(2),
         idclient: savedClient.idclient,
         idag: dto.idag,
-        numero_compte: this.buildNumeroCompte(nextCompteId, savedClient.idclient),
+        numero_compte: this.buildNumeroCompte(
+          nextCompteId,
+          savedClient.idclient,
+        ),
       });
       const savedCompte = await manager.save(compte);
 
@@ -251,6 +310,17 @@ export class TransactionsService {
         payment: paynoteResult,
       };
     });
+  }
+
+  private uploadedFileUrl(
+    files: UploadedPreouvertureFiles,
+    fieldName: string,
+  ): string | undefined {
+    const file = files[fieldName]?.[0];
+    if (!file?.filename) {
+      return undefined;
+    }
+    return `/uploads/preouverture/${file.filename}`;
   }
 
   private async collectWithPaynote(payload: {
@@ -363,7 +433,9 @@ export class TransactionsService {
   }
 
   private async normalizeOperator(value: string): Promise<'om' | 'momo'> {
-    const normalized = String(value || '').trim().toLowerCase();
+    const normalized = String(value || '')
+      .trim()
+      .toLowerCase();
     let resolved: 'om' | 'momo';
 
     if (['om', 'orange', 'orange money'].includes(normalized)) {
@@ -406,7 +478,11 @@ export class TransactionsService {
 
     return new Set(
       latest.operator_actif
-        .map((item) => String(item?.operateur || '').trim().toLowerCase())
+        .map((item) =>
+          String(item?.operateur || '')
+            .trim()
+            .toLowerCase(),
+        )
         .filter(Boolean),
     );
   }
@@ -415,14 +491,16 @@ export class TransactionsService {
     const keyValues = this.extractStatusKeyValues(payment);
     if (keyValues.length === 0) return 'unknown';
 
-    const values = keyValues.map(item => item.value);
-    const statusValue = keyValues.find(item => item.key === 'status')?.value || '';
-    const bodyValue = keyValues.find(item => item.key === 'body')?.value || '';
+    const values = keyValues.map((item) => item.value);
+    const statusValue =
+      keyValues.find((item) => item.key === 'status')?.value || '';
+    const bodyValue =
+      keyValues.find((item) => item.key === 'body')?.value || '';
     const confirmTxnStatus =
-      keyValues.find(item => item.key === 'confirmtxnstatus')?.value || '';
+      keyValues.find((item) => item.key === 'confirmtxnstatus')?.value || '';
     const errorCode =
-      keyValues.find(item => item.key === 'errorcode')?.value ||
-      keyValues.find(item => item.key === 'statuscode')?.value ||
+      keyValues.find((item) => item.key === 'errorcode')?.value ||
+      keyValues.find((item) => item.key === 'statuscode')?.value ||
       '';
 
     const successWords = [
@@ -456,17 +534,19 @@ export class TransactionsService {
       'waiting',
     ];
 
-    if (failedWords.some(word => values.some(value => value.includes(word)))) {
+    if (
+      failedWords.some((word) => values.some((value) => value.includes(word)))
+    ) {
       return 'failed';
     }
 
     if (confirmTxnStatus === '200') return 'success';
 
-    if (successWords.some(word => statusValue.includes(word))) {
+    if (successWords.some((word) => statusValue.includes(word))) {
       return 'success';
     }
 
-    if (pendingWords.some(word => statusValue.includes(word))) {
+    if (pendingWords.some((word) => statusValue.includes(word))) {
       return 'pending';
     }
 
@@ -481,17 +561,23 @@ export class TransactionsService {
       return 'pending';
     }
 
-    if (successWords.some(word => values.some(value => value.includes(word)))) {
+    if (
+      successWords.some((word) => values.some((value) => value.includes(word)))
+    ) {
       return 'success';
     }
-    if (pendingWords.some(word => values.some(value => value.includes(word)))) {
+    if (
+      pendingWords.some((word) => values.some((value) => value.includes(word)))
+    ) {
       return 'pending';
     }
 
     return 'unknown';
   }
 
-  private extractStatusKeyValues(payload: unknown): Array<{ key: string; value: string }> {
+  private extractStatusKeyValues(
+    payload: unknown,
+  ): Array<{ key: string; value: string }> {
     const values: Array<{ key: string; value: string }> = [];
     const walk = (node: unknown) => {
       if (!node) return;
@@ -531,7 +617,7 @@ export class TransactionsService {
   }
 
   private extractStringField(payload: unknown, keys: string[]): string | null {
-    const normalizedKeys = keys.map(key => key.toLowerCase());
+    const normalizedKeys = keys.map((key) => key.toLowerCase());
     let found: string | null = null;
 
     const walk = (node: unknown) => {
@@ -577,9 +663,9 @@ export class TransactionsService {
       'inittxnstatus',
     ]);
     const compact = items
-      .filter(item => interesting.has(item.key))
+      .filter((item) => interesting.has(item.key))
       .slice(0, 6)
-      .map(item => `${item.key}=${item.value}`);
+      .map((item) => `${item.key}=${item.value}`);
 
     return compact.length ? compact.join(', ') : 'statut non interpretable';
   }
@@ -588,14 +674,14 @@ export class TransactionsService {
     const items = this.extractStatusKeyValues(payload);
     if (!items.length) return false;
 
-    const byKey = (key: string) => items.find(item => item.key === key)?.value || '';
+    const byKey = (key: string) =>
+      items.find((item) => item.key === key)?.value || '';
     const errorCode = byKey('errorcode') || byKey('statuscode');
     const body = byKey('body');
 
     const codeAccepted = ['200', '201'].includes(errorCode);
     const bodyAccepted =
-      body.includes('pay request accepted') ||
-      body.includes('accepted');
+      body.includes('pay request accepted') || body.includes('accepted');
 
     return codeAccepted || bodyAccepted;
   }
@@ -624,7 +710,7 @@ export class TransactionsService {
       }
 
       if (i < attempts - 1) {
-        await new Promise(resolve => setTimeout(resolve, delayMs));
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
       }
     }
 
@@ -632,11 +718,31 @@ export class TransactionsService {
   }
 
   private resolveTypeCompte(value?: string): number {
-    const normalized = String(value || '').trim().toLowerCase();
+    const normalized = String(value || '')
+      .trim()
+      .toLowerCase();
     if (!normalized) return 1;
     if (normalized.includes('collecte')) return 1;
     if (normalized.includes('epargne')) return 2;
     return 1;
+  }
+
+  private async assertMobileDepositAllowed(
+    idtype: number,
+    manager?: EntityManager,
+  ) {
+    const typeCompte = manager
+      ? await manager.findOne(Typecompte, { where: { idtype } })
+      : await this.typeCompteRepository.findOneBy({ idtype });
+
+    if (
+      !typeCompte ||
+      Number(typeCompte.mobile_sync_enabled) !== 1 ||
+      Number(typeCompte.mobile_can_view) !== 1 ||
+      Number(typeCompte.mobile_can_deposit) !== 1
+    ) {
+      throw new NotFoundException('Compte non disponible pour versement mobile');
+    }
   }
 
   private normalizePieceIdentite(value?: string): string {
@@ -648,11 +754,7 @@ export class TransactionsService {
     return 'CNI';
   }
 
-  private async nextId(
-    manager: EntityManager,
-    table: string,
-    column: string,
-  ) {
+  private async nextId(manager: EntityManager, table: string, column: string) {
     const rows = await manager.query(
       `SELECT COALESCE(MAX(${column}), 0) + 1 AS nextId FROM ${table}`,
     );
@@ -682,7 +784,9 @@ export class TransactionsService {
   }
 
   private normalizeOrderId(value: string, maxLength: number) {
-    const raw = String(value || '').trim().toUpperCase();
+    const raw = String(value || '')
+      .trim()
+      .toUpperCase();
     const compact = raw.replace(/[^A-Z0-9_-]/g, '');
     if (!compact) {
       return `ORD${Date.now().toString().slice(-8)}`;
@@ -707,7 +811,9 @@ export class TransactionsService {
     return (
       error instanceof QueryFailedError &&
       (mysqlCode === 'ER_BAD_FIELD_ERROR' ||
-        String((error as Error).message || '').toLowerCase().includes('operateur'))
+        String((error as Error).message || '')
+          .toLowerCase()
+          .includes('operateur'))
     );
   }
 }

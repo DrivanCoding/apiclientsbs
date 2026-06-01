@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Notification } from '../entities/notification.entity';
@@ -15,5 +15,33 @@ export class NotificationsService {
       where: { idclient },
       order: { date_creation: 'DESC' },
     });
+  }
+
+  async markAsRead(idclient: number, idnotification: number) {
+    const notification = await this.repository.findOneBy({
+      idclient,
+      idnotification,
+    });
+
+    if (!notification) {
+      throw new NotFoundException('Notification introuvable');
+    }
+
+    if (Number(notification.lu) !== 1) {
+      await this.repository.update({ idclient, idnotification }, { lu: 1 });
+    }
+
+    return {
+      success: true,
+      idnotification,
+      lu: 1,
+    };
+  }
+
+  async markAllAsRead(idclient: number) {
+    await this.repository.update({ idclient, lu: 0 }, { lu: 1 });
+    return {
+      success: true,
+    };
   }
 }

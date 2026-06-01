@@ -38,6 +38,18 @@ export class Client {
   @Column({ length: 255, nullable: true })
   mot_de_passe?: string;
 
+  @Column({ type: 'text', nullable: true })
+  commentaires?: string;
+
+  @Column({ length: 255, nullable: true })
+  photo_identite?: string;
+
+  @Column({ length: 255, nullable: true })
+  signature?: string;
+
   @Column({ nullable: true })
   idag?: number;
+
+  @Column({ default: 1 })
+  is_first_login: number;
 }

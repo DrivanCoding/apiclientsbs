@@ -2,7 +2,6 @@ import {
   IsNotEmpty,
   IsNumber,
   IsOptional,
-  IsPositive,
   IsString,
   Matches,
   Min,
@@ -15,7 +14,7 @@ export class CreateClientCompteDto {
 
   @IsOptional()
   @IsNumber()
-  @IsPositive()
+  @Min(0)
   solde_initial?: number;
 
   @IsOptional()
@@ -32,4 +31,3 @@ export class CreateClientCompteDto {
   @Min(1)
   idag?: number;
 }
-

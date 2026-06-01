@@ -13,6 +13,7 @@ import { Setting } from './entities/setting.entity';
 import { Transaction } from './entities/transaction.entity';
 import { Typecompte } from './entities/typecompte.entity';
 import { User } from './entities/user.entity';
+import { Actualite } from './entities/actualite.entity';
 import { AgencesModule } from './agences/agences.module';
 import { AdminModule } from './admin/admin.module';
 import { AuthModule } from './auth/auth.module';
@@ -22,6 +23,7 @@ import { TransactionsModule } from './transactions/transactions.module';
 import { TypecomptesModule } from './typecomptes/typecomptes.module';
 import { UsersModule } from './users/users.module';
 import { NotificationsModule } from './notifications/notifications.module';
+import { ActualitesModule } from './actualites/actualites.module';
 
 @Module({
   imports: [
@@ -44,6 +46,7 @@ import { NotificationsModule } from './notifications/notifications.module';
         Transaction,
         Typecompte,
         User,
+        Actualite,
       ],
       synchronize: false,
     }),
@@ -56,6 +59,7 @@ import { NotificationsModule } from './notifications/notifications.module';
     NotificationsModule,
     TypecomptesModule,
     UsersModule,
+    ActualitesModule,
   ],
   controllers: [AppController],
   providers: [AppService],

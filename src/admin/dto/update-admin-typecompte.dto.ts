@@ -69,4 +69,28 @@ export class UpdateAdminTypecompteDto {
   @IsNumber()
   @Min(1)
   idparent?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(1)
+  mobile_sync_enabled?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(1)
+  mobile_can_open?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(1)
+  mobile_can_view?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(1)
+  mobile_can_deposit?: number;
 }

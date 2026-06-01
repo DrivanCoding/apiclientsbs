@@ -17,7 +17,7 @@ export class AuthService {
   ) {}
 
   async validateClient(email: string, password: string) {
-    const client = await this.clientsService.findByEmail(email);
+    const client = await this.clientsService.findByLoginIdentifier(email);
     if (!client || !client.mot_de_passe) {
       return null;
     }

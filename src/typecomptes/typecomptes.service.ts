@@ -17,6 +17,10 @@ export class TypecomptesService {
       numero: payload.numero ?? 1,
       type: payload.type ?? '1',
       taux_interet: payload.taux_interet ?? '0.00',
+      mobile_sync_enabled: payload.mobile_sync_enabled ?? 0,
+      mobile_can_open: payload.mobile_can_open ?? 0,
+      mobile_can_view: payload.mobile_can_view ?? 1,
+      mobile_can_deposit: payload.mobile_can_deposit ?? 1,
     };
     return this.repository.save(normalized);
   }

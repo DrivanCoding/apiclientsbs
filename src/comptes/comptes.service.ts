@@ -11,6 +11,7 @@ import * as nodemailer from 'nodemailer';
 import { Client } from '../entities/client.entity';
 import { Compte } from '../entities/compte.entity';
 import { ComptePinOtp } from '../entities/compte-pin-otp.entity';
+import { Typecompte } from '../entities/typecompte.entity';
 import { ConfirmPinSetupDto } from './dto/confirm-pin-setup.dto';
 import { RequestPinOtpDto } from './dto/request-pin-otp.dto';
 import { VerifyComptePinDto } from './dto/verify-compte-pin.dto';
@@ -24,22 +25,39 @@ export class ComptesService {
     private readonly clientRepository: Repository<Client>,
     @InjectRepository(ComptePinOtp)
     private readonly otpRepository: Repository<ComptePinOtp>,
+    @InjectRepository(Typecompte)
+    private readonly typeCompteRepository: Repository<Typecompte>,
   ) {}
 
   async create(payload: Partial<Compte>) {
     const pin_code = await this.hashPin(payload.pin_code);
     const saved = await this.repository.save({ ...payload, pin_code });
-    return this.toCompteResponse(saved);
+    const typeCompte = await this.findTypeCompte(saved.idtype);
+    return this.toCompteResponse(saved, true, typeCompte);
   }
 
   async findAll() {
     const comptes = await this.repository.find();
-    return comptes.map((compte) => this.toCompteResponse(compte));
+    const typesById = await this.typeCompteMap();
+    return comptes
+      .filter((compte) => this.isMobileAllowed(typesById.get(compte.idtype)))
+      .map((compte) =>
+        this.toCompteResponse(compte, true, typesById.get(compte.idtype)),
+      );
   }
 
   async findOne(id: number) {
     const compte = await this.repository.findOneBy({ idcompte: id });
-    return compte ? this.toCompteResponse(compte) : null;
+    if (!compte) {
+      return null;
+    }
+
+    const typeCompte = await this.findTypeCompte(compte.idtype);
+    if (!this.isMobileAllowed(typeCompte)) {
+      return null;
+    }
+
+    return this.toCompteResponse(compte, true, typeCompte);
   }
 
   async findByClient(idclient: number) {
@@ -47,7 +65,16 @@ export class ComptesService {
       where: { idclient },
       order: { idcompte: 'ASC' },
     });
-    return comptes.map((compte) => this.toCompteResponse(compte, false));
+    const typesById = await this.typeCompteMap();
+
+    return comptes
+      .filter((compte) => {
+        const typeCompte = typesById.get(compte.idtype);
+        return this.isMobileAllowed(typeCompte);
+      })
+      .map((compte) =>
+        this.toCompteResponse(compte, false, typesById.get(compte.idtype)),
+      );
   }
 
   async findByAgence(idag: number) {
@@ -55,7 +82,12 @@ export class ComptesService {
       where: { idag },
       order: { idcompte: 'ASC' },
     });
-    return comptes.map((compte) => this.toCompteResponse(compte));
+    const typesById = await this.typeCompteMap();
+    return comptes
+      .filter((compte) => this.isMobileAllowed(typesById.get(compte.idtype)))
+      .map((compte) =>
+        this.toCompteResponse(compte, true, typesById.get(compte.idtype)),
+      );
   }
 
   async verifyPinAndGetCompteDetail(
@@ -71,8 +103,11 @@ export class ComptesService {
       throw new NotFoundException('Compte introuvable');
     }
 
+    const typeCompte = await this.findTypeCompte(compte.idtype);
+    this.assertMobileAllowed(typeCompte);
+
     if (!compte.pin_code) {
-      return this.toCompteResponse(compte, true);
+      return this.toCompteResponse(compte, true, typeCompte);
     }
 
     const isMatch = await bcrypt.compare(payload.pin_code, compte.pin_code);
@@ -80,7 +115,7 @@ export class ComptesService {
       throw new UnauthorizedException('Code PIN incorrect');
     }
 
-    return this.toCompteResponse(compte, true);
+    return this.toCompteResponse(compte, true, typeCompte);
   }
 
   async requestPinSetupOtp(payload: RequestPinOtpDto) {
@@ -92,6 +127,7 @@ export class ComptesService {
     if (!compte) {
       throw new NotFoundException('Compte introuvable pour ce client');
     }
+    this.assertMobileAllowed(await this.findTypeCompte(compte.idtype));
 
     if (compte.pin_code) {
       throw new BadRequestException('Le code PIN est deja configure');
@@ -100,11 +136,8 @@ export class ComptesService {
     const client = await this.clientRepository.findOneBy({
       idclient: payload.idclient,
     });
-    const email = client?.email?.trim().toLowerCase();
-    if (!email) {
-      throw new BadRequestException(
-        "Le client n'a pas d'email pour recevoir le code OTP",
-      );
+    if (!client) {
+      throw new NotFoundException('Client introuvable');
     }
 
     await this.otpRepository.delete({
@@ -127,13 +160,13 @@ export class ComptesService {
       consumed_at: null,
     });
 
-    const delivery = await this.sendPinOtpEmail(email, otpCode, payload.idcompte);
+    const delivery = await this.deliverPinOtp(client, otpCode, payload.idcompte);
 
     return {
       success: true,
-      delivery,
+      delivery: delivery.channel,
       expires_at: expiresAt.toISOString(),
-      message: 'Un code OTP a ete envoye par email',
+      message: delivery.message,
     };
   }
 
@@ -145,6 +178,7 @@ export class ComptesService {
     if (!compte) {
       throw new NotFoundException('Compte introuvable pour ce client');
     }
+    this.assertMobileAllowed(await this.findTypeCompte(compte.idtype));
 
     if (compte.pin_code) {
       throw new BadRequestException('Le code PIN est deja configure');
@@ -193,9 +227,12 @@ export class ComptesService {
     });
 
     const updated = await this.repository.findOneBy({ idcompte: compte.idcompte });
+    const typeCompte = updated
+      ? await this.findTypeCompte(updated.idtype)
+      : undefined;
     return {
       success: true,
-      compte: updated ? this.toCompteResponse(updated, false) : null,
+      compte: updated ? this.toCompteResponse(updated, false, typeCompte) : null,
       message: 'Code PIN configure avec succes',
     };
   }
@@ -211,10 +248,13 @@ export class ComptesService {
 
     const result = await this.repository.update(id, updatePayload);
     const updated = await this.repository.findOneBy({ idcompte: id });
+    const typeCompte = updated
+      ? await this.findTypeCompte(updated.idtype)
+      : undefined;
 
     return {
       ...result,
-      compte: updated ? this.toCompteResponse(updated) : null,
+      compte: updated ? this.toCompteResponse(updated, true, typeCompte) : null,
     };
   }
 
@@ -273,7 +313,98 @@ export class ComptesService {
     return 'email';
   }
 
-  private async hashPin(pin?: string) {
+  private async deliverPinOtp(client: Client, otpCode: string, idcompte: number) {
+    const phone = this.normalizePhone(client.telephone_principal);
+    const email = client.email?.trim().toLowerCase();
+    const message = `Votre code OTP SBS pour configurer le PIN du compte #${idcompte} est: ${otpCode}. Il expire dans 10 minutes.`;
+
+    if (phone) {
+      const delivery = await this.sendPinOtpSms(phone, message, idcompte, otpCode);
+      return {
+        channel: delivery,
+        message: 'Un code OTP a ete envoye par SMS',
+      };
+    }
+
+    if (email) {
+      const delivery = await this.sendPinOtpEmail(email, otpCode, idcompte);
+      return {
+        channel: delivery,
+        message: 'Aucun numero telephone trouve. Le code OTP a ete envoye par email',
+      };
+    }
+
+    throw new BadRequestException(
+      "Aucun telephone ni email disponible. Contactez votre agence pour mettre a jour vos informations.",
+    );
+  }
+
+  private async sendPinOtpSms(
+    phone: string,
+    message: string,
+    idcompte: number,
+    otpCode: string,
+  ): Promise<'sms' | 'console_sms'> {
+    const user = process.env.SMS_USER?.trim() || process.env.EBS_SMS_USER?.trim();
+    const password =
+      process.env.SMS_PASSWORD?.trim() || process.env.EBS_SMS_PASSWORD?.trim();
+    const senderID =
+      process.env.SMS_SENDER_ID?.trim() ||
+      process.env.EBS_SMS_SENDER_ID?.trim() ||
+      'SBS';
+    const endpoint =
+      process.env.SMS_API_URL?.trim() ||
+      process.env.EBS_SMS_API_URL?.trim() ||
+      'https://sms.ebs237.online/smsapi/sendSMS';
+
+    if (!user || !password || !senderID) {
+      console.warn(
+        `[PIN-OTP-SMS] SMS non configure. OTP compte #${idcompte} pour ${phone}: ${otpCode}`,
+      );
+      return 'console_sms';
+    }
+
+    const body = new URLSearchParams({
+      user,
+      password,
+      senderID,
+      phone,
+      message,
+    });
+
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body,
+    });
+    const text = await response.text();
+    if (!response.ok || this.smsLooksFailed(text)) {
+      throw new BadRequestException(`Echec envoi SMS OTP: ${text || response.status}`);
+    }
+
+    return 'sms';
+  }
+
+  private normalizePhone(value?: string | null) {
+    const digits = String(value || '').replace(/\D/g, '');
+    if (digits.length < 8) {
+      return '';
+    }
+    return digits;
+  }
+
+  private smsLooksFailed(raw: string) {
+    const text = raw.trim().toLowerCase();
+    if (!text) return false;
+    return (
+      text.includes('error') ||
+      text.includes('erreur') ||
+      text.includes('failed') ||
+      text.includes('echec')
+    );
+  }
+
+  private async hashPin(pin?: string | null) {
     if (!pin) return undefined;
     const normalized = pin.trim();
     if (!/^\d{4,6}$/.test(normalized)) {
@@ -282,12 +413,55 @@ export class ComptesService {
     return bcrypt.hash(normalized, 10);
   }
 
-  private toCompteResponse(compte: Compte, includeSensitive = true) {
+  private async typeCompteMap() {
+    const types = await this.typeCompteRepository.find();
+    return new Map(types.map((typeCompte) => [typeCompte.idtype, typeCompte]));
+  }
+
+  private findTypeCompte(idtype?: number) {
+    if (!idtype) {
+      return Promise.resolve(null);
+    }
+    return this.typeCompteRepository.findOneBy({ idtype });
+  }
+
+  private asEnabled(value: unknown, defaultValue: boolean) {
+    if (value === undefined || value === null) {
+      return defaultValue;
+    }
+    return Number(value) === 1;
+  }
+
+  private isMobileAllowed(typeCompte?: Typecompte | null) {
+    return (
+      this.asEnabled(typeCompte?.mobile_sync_enabled, false) &&
+      this.asEnabled(typeCompte?.mobile_can_view, true)
+    );
+  }
+
+  private assertMobileAllowed(typeCompte?: Typecompte | null) {
+    if (!this.isMobileAllowed(typeCompte)) {
+      throw new NotFoundException('Compte non disponible sur mobileclient');
+    }
+  }
+
+  private toCompteResponse(
+    compte: Compte,
+    includeSensitive = true,
+    typeCompte?: Typecompte | null,
+  ) {
     const { pin_code: _pin, ...safeCompte } = compte;
     return {
       ...safeCompte,
       solde: includeSensitive ? safeCompte.solde : _pin ? null : safeCompte.solde,
       has_pin: Boolean(_pin),
+      libelle: typeCompte?.libelle ?? null,
+      type_compte: typeCompte?.libelle ?? null,
+      chapitre_comptable: typeCompte?.numero ?? null,
+      mobile_sync_enabled: this.asEnabled(typeCompte?.mobile_sync_enabled, false),
+      mobile_can_open: this.asEnabled(typeCompte?.mobile_can_open, false),
+      mobile_can_view: this.asEnabled(typeCompte?.mobile_can_view, true),
+      mobile_can_deposit: this.asEnabled(typeCompte?.mobile_can_deposit, true),
     };
   }
 }

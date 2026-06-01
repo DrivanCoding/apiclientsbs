@@ -40,4 +40,16 @@ export class Typecompte {
 
   @Column({ nullable: true })
   idparent?: number;
+
+  @Column({ default: 0 })
+  mobile_sync_enabled: number;
+
+  @Column({ default: 0 })
+  mobile_can_open: number;
+
+  @Column({ default: 1 })
+  mobile_can_view: number;
+
+  @Column({ default: 1 })
+  mobile_can_deposit: number;
 }

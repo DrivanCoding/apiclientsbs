@@ -194,6 +194,14 @@ export class AdminController {
     return this.adminService.updateCompteForClient(idclient, idcompte, dto);
   }
 
+  @Patch('clients/:idclient/comptes/:idcompte/reset-pin')
+  resetComptePinForClient(
+    @Param('idclient', ParseIntPipe) idclient: number,
+    @Param('idcompte', ParseIntPipe) idcompte: number,
+  ) {
+    return this.adminService.resetComptePinForClient(idclient, idcompte);
+  }
+
   @Delete('clients/:idclient/comptes/:idcompte')
   removeCompteForClient(
     @Param('idclient', ParseIntPipe) idclient: number,

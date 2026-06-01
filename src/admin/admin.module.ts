@@ -11,6 +11,7 @@ import { Transaction } from '../entities/transaction.entity';
 import { ListeOperator } from '../entities/liste-operator.entity';
 import { Setting } from '../entities/setting.entity';
 import { AppEntity } from '../entities/app.entity';
+import { Notification } from '../entities/notification.entity';
 
 @Module({
   imports: [
@@ -24,6 +25,7 @@ import { AppEntity } from '../entities/app.entity';
       ListeOperator,
       Setting,
       AppEntity,
+      Notification,
     ]),
   ],
   controllers: [AdminController],
