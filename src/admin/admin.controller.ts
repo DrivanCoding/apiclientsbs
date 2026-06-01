@@ -8,8 +8,10 @@ import {
   Patch,
   Post,
   Query,
+  UseGuards,
 } from '@nestjs/common';
 import { AdminService } from './admin.service';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CreateAdminUserDto } from './dto/create-admin-user.dto';
 import { UpdateAdminUserDto } from './dto/update-admin-user.dto';
 import { CreateAdminAgenceDto } from './dto/create-admin-agence.dto';
@@ -27,6 +29,7 @@ import { UpdateAdminOperatorActivationDto } from './dto/update-admin-operator-ac
 import { CreateAdminAppDto } from './dto/create-admin-app.dto';
 
 @Controller('admin')
+@UseGuards(JwtAuthGuard)
 export class AdminController {
   constructor(private readonly adminService: AdminService) {}
 
