@@ -73,7 +73,7 @@ export class ComptesService {
         return this.isMobileAllowed(typeCompte);
       })
       .map((compte) =>
-        this.toCompteResponse(compte, false, typesById.get(compte.idtype)),
+        this.toCompteResponse(compte, true, typesById.get(compte.idtype)),
       );
   }
 
