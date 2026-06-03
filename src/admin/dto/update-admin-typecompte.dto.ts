@@ -2,7 +2,6 @@ import {
   IsIn,
   IsNumber,
   IsOptional,
-  IsPositive,
   IsString,
   Length,
   Max,
@@ -37,7 +36,7 @@ export class UpdateAdminTypecompteDto {
 
   @IsOptional()
   @IsNumber()
-  @IsPositive()
+  @Min(0)
   plafond?: number;
 
   @IsOptional()

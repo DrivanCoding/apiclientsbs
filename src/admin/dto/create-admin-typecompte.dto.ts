@@ -3,7 +3,6 @@ import {
   IsNotEmpty,
   IsNumber,
   IsOptional,
-  IsPositive,
   IsString,
   Length,
   Max,
@@ -38,7 +37,7 @@ export class CreateAdminTypecompteDto {
 
   @IsOptional()
   @IsNumber()
-  @IsPositive()
+  @Min(0)
   plafond?: number;
 
   @IsOptional()
