@@ -455,7 +455,6 @@ export class AdminService {
       existing.idcategorie = dto.idcategorie ?? 1;
       existing.numero = dto.numero ?? 1;
       existing.type = dto.type ?? '1';
-      existing.idparent = dto.idparent;
       existing.mobile_sync_enabled = dto.mobile_sync_enabled ?? 0;
       existing.mobile_can_open = dto.mobile_can_open ?? 0;
       existing.mobile_can_view = dto.mobile_can_view ?? 1;
@@ -477,7 +476,6 @@ export class AdminService {
       idcategorie: dto.idcategorie ?? 1,
       numero: dto.numero ?? 1,
       type: dto.type ?? '1',
-      idparent: dto.idparent,
       mobile_sync_enabled: dto.mobile_sync_enabled ?? 0,
       mobile_can_open: dto.mobile_can_open ?? 0,
       mobile_can_view: dto.mobile_can_view ?? 1,
@@ -519,7 +517,6 @@ export class AdminService {
     if (dto.idcategorie !== undefined) updatePayload.idcategorie = dto.idcategorie;
     if (dto.numero !== undefined) updatePayload.numero = dto.numero;
     if (dto.type !== undefined) updatePayload.type = dto.type;
-    if (dto.idparent !== undefined) updatePayload.idparent = dto.idparent;
     if (dto.mobile_sync_enabled !== undefined) {
       updatePayload.mobile_sync_enabled = dto.mobile_sync_enabled;
     }
