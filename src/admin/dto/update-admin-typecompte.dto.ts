@@ -11,6 +11,11 @@ import {
 
 export class UpdateAdminTypecompteDto {
   @IsOptional()
+  @IsNumber()
+  @Min(1)
+  idtype?: number;
+
+  @IsOptional()
   @IsString()
   @Length(1, 50)
   libelle?: string;

@@ -1,6 +1,11 @@
-import { IsNotEmpty, IsNumber, IsOptional, IsString, Min } from 'class-validator';
+import { IsIn, IsNotEmpty, IsNumber, IsOptional, IsString, Min } from 'class-validator';
 
 export class CreateAdminAgenceDto {
+  @IsOptional()
+  @IsNumber()
+  @Min(1)
+  idag?: number;
+
   @IsNumber()
   @Min(1)
   idcompagnie: number;
@@ -20,4 +25,13 @@ export class CreateAdminAgenceDto {
   @IsOptional()
   @IsString()
   telephone_agence?: string;
+
+  @IsOptional()
+  @IsString()
+  date_ouverture?: string;
+
+  @IsOptional()
+  @IsString()
+  @IsIn(['actif', 'hors_service'])
+  statut_agence?: 'actif' | 'hors_service';
 }

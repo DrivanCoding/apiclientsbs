@@ -10,6 +10,11 @@ export class UpdateAdminAgenceDto {
   @IsOptional()
   @IsNumber()
   @Min(1)
+  idag?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(1)
   idcompagnie?: number;
 
   @IsOptional()
@@ -27,6 +32,10 @@ export class UpdateAdminAgenceDto {
   @IsOptional()
   @IsString()
   telephone_agence?: string;
+
+  @IsOptional()
+  @IsString()
+  date_ouverture?: string;
 
   @IsOptional()
   @IsString()

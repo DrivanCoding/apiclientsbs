@@ -11,6 +11,11 @@ import {
 } from 'class-validator';
 
 export class CreateAdminTypecompteDto {
+  @IsOptional()
+  @IsNumber()
+  @Min(1)
+  idtype?: number;
+
   @IsString()
   @IsNotEmpty()
   @Length(1, 50)

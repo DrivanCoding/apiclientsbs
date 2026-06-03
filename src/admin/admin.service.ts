@@ -192,7 +192,19 @@ export class AdminService {
   }
 
   async createAgence(dto: CreateAdminAgenceDto) {
-    const idag = await this.nextId(this.agenceRepository, 'idag');
+    const idag = dto.idag ?? (await this.nextId(this.agenceRepository, 'idag'));
+    const existing = await this.agenceRepository.findOneBy({ idag });
+    if (existing) {
+      existing.idcompagnie = dto.idcompagnie;
+      existing.nom_agence = dto.nom_agence.trim();
+      existing.alias_agence = dto.alias_agence?.trim();
+      existing.ville = dto.ville?.trim();
+      existing.telephone_agence = dto.telephone_agence?.trim();
+      existing.date_ouverture = dto.date_ouverture;
+      existing.statut_agence = dto.statut_agence ?? existing.statut_agence;
+      return this.agenceRepository.save(existing);
+    }
+
     const agence = this.agenceRepository.create({
       idag,
       idcompagnie: dto.idcompagnie,
@@ -200,7 +212,8 @@ export class AdminService {
       alias_agence: dto.alias_agence?.trim(),
       ville: dto.ville?.trim(),
       telephone_agence: dto.telephone_agence?.trim(),
-      statut_agence: 'actif',
+      date_ouverture: dto.date_ouverture,
+      statut_agence: dto.statut_agence ?? 'actif',
     });
 
     return this.agenceRepository.save(agence);
@@ -224,6 +237,7 @@ export class AdminService {
     if (dto.telephone_agence !== undefined) {
       updatePayload.telephone_agence = dto.telephone_agence.trim();
     }
+    if (dto.date_ouverture !== undefined) updatePayload.date_ouverture = dto.date_ouverture;
     if (dto.statut_agence !== undefined) updatePayload.statut_agence = dto.statut_agence;
 
     if (Object.keys(updatePayload).length === 0) {
@@ -435,7 +449,29 @@ export class AdminService {
       }
     }
 
-    const idtype = await this.nextId(this.typecompteRepository, 'idtype');
+    const idtype = dto.idtype ?? (await this.nextId(this.typecompteRepository, 'idtype'));
+    const existing = await this.typecompteRepository.findOneBy({ idtype });
+    if (existing) {
+      existing.libelle = dto.libelle.trim();
+      existing.description = dto.description?.trim();
+      existing.taux_interet = this.toDecimalString(dto.taux_interet, 2, 0);
+      existing.frais_tenue_compte = this.toDecimalString(dto.frais_tenue_compte, 2, 0);
+      existing.plafond =
+        dto.plafond !== undefined ? this.toDecimalString(dto.plafond, 2) : undefined;
+      existing.frais_ouverture = dto.frais_ouverture;
+      existing.frais_retrait = dto.frais_retrait;
+      existing.code_type = dto.code_type?.trim();
+      existing.idcategorie = dto.idcategorie ?? 1;
+      existing.numero = dto.numero ?? 1;
+      existing.type = dto.type ?? '1';
+      existing.idparent = dto.idparent;
+      existing.mobile_sync_enabled = dto.mobile_sync_enabled ?? 0;
+      existing.mobile_can_open = dto.mobile_can_open ?? 0;
+      existing.mobile_can_view = dto.mobile_can_view ?? 1;
+      existing.mobile_can_deposit = dto.mobile_can_deposit ?? 1;
+      return this.typecompteRepository.save(existing);
+    }
+
     const typecompte = this.typecompteRepository.create({
       idtype,
       libelle: dto.libelle.trim(),
