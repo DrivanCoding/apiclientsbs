@@ -440,15 +440,6 @@ export class AdminService {
   }
 
   async createTypecompte(dto: CreateAdminTypecompteDto) {
-    if (dto.idparent !== undefined) {
-      const parent = await this.typecompteRepository.findOneBy({
-        idtype: dto.idparent,
-      });
-      if (!parent) {
-        throw new NotFoundException('Type parent introuvable');
-      }
-    }
-
     const idtype = dto.idtype ?? (await this.nextId(this.typecompteRepository, 'idtype'));
     const existing = await this.typecompteRepository.findOneBy({ idtype });
     if (existing) {
@@ -500,18 +491,6 @@ export class AdminService {
     const typecompte = await this.typecompteRepository.findOneBy({ idtype });
     if (!typecompte) {
       throw new NotFoundException('Type de compte introuvable');
-    }
-
-    if (dto.idparent !== undefined) {
-      if (dto.idparent === idtype) {
-        throw new BadRequestException('Un type ne peut pas etre son propre parent');
-      }
-      const parent = await this.typecompteRepository.findOneBy({
-        idtype: dto.idparent,
-      });
-      if (!parent) {
-        throw new NotFoundException('Type parent introuvable');
-      }
     }
 
     const updatePayload: Partial<Typecompte> = {};

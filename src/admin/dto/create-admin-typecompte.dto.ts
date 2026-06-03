@@ -72,11 +72,6 @@ export class CreateAdminTypecompteDto {
 
   @IsOptional()
   @IsNumber()
-  @Min(1)
-  idparent?: number;
-
-  @IsOptional()
-  @IsNumber()
   @Min(0)
   @Max(1)
   mobile_sync_enabled?: number;
