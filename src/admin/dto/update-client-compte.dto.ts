@@ -10,6 +10,11 @@ export class UpdateClientCompteDto {
   @IsOptional()
   @IsNumber()
   @Min(1)
+  idcompte?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(1)
   idtype?: number;
 
   @IsOptional()

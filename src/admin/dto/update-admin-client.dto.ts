@@ -9,6 +9,11 @@ import {
 
 export class UpdateAdminClientDto {
   @IsOptional()
+  @IsNumber()
+  @Min(1)
+  idclient?: number;
+
+  @IsOptional()
   @IsString()
   @Length(1, 20)
   code_client?: string;

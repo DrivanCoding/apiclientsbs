@@ -1,5 +1,7 @@
--- Mise a jour de la base `clientsbs` pour l'API mobile SBSClient.
--- A executer sur la base utilisee par sbsclient/apiclientsbs.
+-- Correctifs idempotents pour aligner la base clientsbs en ligne
+-- avec l'API mobile SBSClient.
+--
+-- A executer sur la base MySQL/MariaDB `clientsbs`.
 
 DELIMITER $$
 
@@ -47,14 +49,21 @@ END $$
 
 DELIMITER ;
 
-CALL add_column_if_missing('clients', 'is_first_login', 'TINYINT(1) NOT NULL DEFAULT 1');
-CALL add_column_if_missing('clients', 'idag', 'INT NULL');
+-- Colonnes attendues par les entites/services NestJS.
+CALL add_column_if_missing('clients', 'idag', 'INT NULL AFTER `is_first_login`');
+CALL add_column_if_missing('clients', 'is_first_login', 'TINYINT(1) NOT NULL DEFAULT 1 AFTER `idzone`');
+
 CALL add_column_if_missing('compte', 'pin_code', 'VARCHAR(255) NULL AFTER `numero_compte`');
+CALL add_column_if_missing('compte', 'idag', 'INT NULL');
+
+CALL add_column_if_missing('transaction', 'operateur', 'VARCHAR(20) NULL AFTER `type_transaction`');
+
 CALL add_column_if_missing('typecompte', 'mobile_sync_enabled', 'TINYINT(1) NOT NULL DEFAULT 0');
 CALL add_column_if_missing('typecompte', 'mobile_can_open', 'TINYINT(1) NOT NULL DEFAULT 0');
 CALL add_column_if_missing('typecompte', 'mobile_can_view', 'TINYINT(1) NOT NULL DEFAULT 1');
 CALL add_column_if_missing('typecompte', 'mobile_can_deposit', 'TINYINT(1) NOT NULL DEFAULT 1');
 
+-- Tables utilisees par notifications, actualites et creation/validation PIN.
 CREATE TABLE IF NOT EXISTS `actualite` (
   `idactualite` int NOT NULL AUTO_INCREMENT,
   `titre` varchar(255) NOT NULL,
@@ -73,8 +82,7 @@ CREATE TABLE IF NOT EXISTS `notification` (
   `type` varchar(40) DEFAULT 'versement',
   `lu` tinyint(1) NOT NULL DEFAULT 0,
   `date_creation` datetime DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (`idnotification`),
-  KEY `FK_NOTIFICATION_CLIENT` (`idclient`)
+  PRIMARY KEY (`idnotification`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 CREATE TABLE IF NOT EXISTS `compte_pin_otp` (
@@ -86,13 +94,18 @@ CREATE TABLE IF NOT EXISTS `compte_pin_otp` (
   `consumed_at` datetime DEFAULT NULL,
   `attempts` int NOT NULL DEFAULT 0,
   `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (`id`),
-  KEY `idx_compte_pin_otp_compte_client` (`idcompte`, `idclient`),
-  KEY `idx_compte_pin_otp_expires` (`expires_at`)
+  PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
+-- Index utiles pour les requetes de synchronisation mobile.
+CALL create_index_if_missing('clients', 'idx_clients_agence', 'INDEX `idx_clients_agence` (`idag`)');
+CALL create_index_if_missing('compte', 'idx_compte_agence', 'INDEX `idx_compte_agence` (`idag`)');
+CALL create_index_if_missing('transaction', 'idx_transaction_operateur', 'INDEX `idx_transaction_operateur` (`operateur`)');
 CALL create_index_if_missing('typecompte', 'idx_typecompte_mobile_sync', 'INDEX `idx_typecompte_mobile_sync` (`mobile_sync_enabled`)');
+CALL create_index_if_missing('notification', 'FK_NOTIFICATION_CLIENT', 'INDEX `FK_NOTIFICATION_CLIENT` (`idclient`)');
 CALL create_index_if_missing('notification', 'idx_notification_client_lu', 'INDEX `idx_notification_client_lu` (`idclient`, `lu`)');
+CALL create_index_if_missing('compte_pin_otp', 'idx_compte_pin_otp_compte_client', 'INDEX `idx_compte_pin_otp_compte_client` (`idcompte`, `idclient`)');
+CALL create_index_if_missing('compte_pin_otp', 'idx_compte_pin_otp_expires', 'INDEX `idx_compte_pin_otp_expires` (`expires_at`)');
 
 DROP PROCEDURE IF EXISTS add_column_if_missing;
 DROP PROCEDURE IF EXISTS create_index_if_missing;

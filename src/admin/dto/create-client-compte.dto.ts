@@ -8,6 +8,11 @@ import {
 } from 'class-validator';
 
 export class CreateClientCompteDto {
+  @IsOptional()
+  @IsNumber()
+  @Min(1)
+  idcompte?: number;
+
   @IsNumber()
   @Min(1)
   idtype: number;

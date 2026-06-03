@@ -277,8 +277,37 @@ export class AdminService {
       }
     }
 
-    const idclient = await this.nextId(this.clientRepository, 'idclient');
+    const idclient = dto.idclient ?? (await this.nextId(this.clientRepository, 'idclient'));
     const codeClient = dto.code_client?.trim() || this.generateClientCode(idclient);
+    const existingId = await this.clientRepository.findOneBy({ idclient });
+    if (existingId) {
+      if (existingId.code_client !== codeClient) {
+        const existingCodeForOtherClient = await this.clientRepository.findOneBy({
+          code_client: codeClient,
+        });
+        if (existingCodeForOtherClient && existingCodeForOtherClient.idclient !== idclient) {
+          throw new ConflictException('Ce code client existe deja');
+        }
+      }
+
+      existingId.code_client = codeClient;
+      existingId.nom = dto.nom.trim().toUpperCase();
+      existingId.prenom = dto.prenom?.trim();
+      existingId.piece_identite = dto.piece_identite.trim();
+      existingId.num_piece_identite = dto.num_piece_identite.trim();
+      existingId.adresse = dto.adresse.trim();
+      existingId.code_postal = dto.code_postal.trim();
+      existingId.ville = dto.ville.trim();
+      existingId.email = dto.email?.trim().toLowerCase();
+      existingId.telephone_principal = dto.telephone_principal?.trim();
+      existingId.idag = dto.idag;
+      if (dto.mot_de_passe) {
+        existingId.mot_de_passe = await bcrypt.hash(dto.mot_de_passe.trim(), 10);
+      }
+      const savedExisting = await this.clientRepository.save(existingId);
+      return this.toClientResponse(savedExisting);
+    }
+
     const existingCode = await this.clientRepository.findOneBy({
       code_client: codeClient,
     });
@@ -649,9 +678,33 @@ export class AdminService {
       throw new NotFoundException('Agence introuvable pour ce compte client');
     }
 
-    const idcompte = await this.nextId(this.compteRepository, 'idcompte');
+    const idcompte = dto.idcompte ?? (await this.nextId(this.compteRepository, 'idcompte'));
     const numeroCompte =
       dto.numero_compte?.trim() || this.generateClientNumeroCompte(idag, idclient, idcompte);
+
+    const existingId = await this.compteRepository.findOneBy({ idcompte });
+    if (existingId) {
+      if (existingId.idclient !== idclient) {
+        throw new ConflictException('Cet identifiant compte existe deja');
+      }
+
+      const existingNumeroForOtherCompte = await this.compteRepository.findOneBy({
+        numero_compte: numeroCompte,
+      });
+      if (existingNumeroForOtherCompte && existingNumeroForOtherCompte.idcompte !== idcompte) {
+        throw new ConflictException('Ce numero de compte existe deja');
+      }
+
+      existingId.idag = idag;
+      existingId.idtype = dto.idtype;
+      existingId.solde = (dto.solde_initial ?? Number(existingId.solde ?? 0)).toFixed(2);
+      existingId.numero_compte = numeroCompte;
+      if (dto.pin_code) {
+        existingId.pin_code = await this.hashPin(dto.pin_code);
+      }
+      const savedExisting = await this.compteRepository.save(existingId);
+      return this.toCompteResponse(savedExisting);
+    }
 
     const existingNumero = await this.compteRepository.findOneBy({
       numero_compte: numeroCompte,
