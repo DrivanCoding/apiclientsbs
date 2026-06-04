@@ -21,6 +21,7 @@ import { Transaction } from '../entities/transaction.entity';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { TransactionsService } from './transactions.service';
 import { DepositDto } from './dto/deposit.dto';
+import { OuvertureCompteDto } from './dto/ouverture-compte.dto';
 import { PreouvertureDto } from './dto/preouverture.dto';
 
 const preouvertureUploadDir = join(process.cwd(), 'uploads', 'preouverture');
@@ -64,6 +65,23 @@ export class TransactionsController {
   ) {
     const idclient = Number(req.user?.idclient || 0);
     return this.service.deposit(dto, idclient);
+  }
+
+  @Get('openable-typecomptes')
+  @UseGuards(JwtAuthGuard)
+  openableTypecomptes(@Req() req: { user?: { idclient?: number } }) {
+    const idclient = Number(req.user?.idclient || 0);
+    return this.service.openableTypecomptes(idclient);
+  }
+
+  @Post('ouverture-compte')
+  @UseGuards(JwtAuthGuard)
+  ouvertureCompte(
+    @Body() dto: OuvertureCompteDto,
+    @Req() req: { user?: { idclient?: number } },
+  ) {
+    const idclient = Number(req.user?.idclient || 0);
+    return this.service.requestCompteOpening(dto, idclient);
   }
 
   @Post('preouverture')

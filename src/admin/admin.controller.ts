@@ -122,6 +122,34 @@ export class AdminController {
     return this.adminService.findTypecomptes();
   }
 
+  @Get('preouvertures-tampon')
+  findPreouverturesTampon(@Query('status') status?: string) {
+    return this.adminService.findPreouverturesTampon(status);
+  }
+
+  @Patch('preouvertures-tampon/:id')
+  updatePreouvertureTamponStatus(
+    @Param('id', ParseIntPipe) id: number,
+    @Body()
+    payload: { statut_validation?: string; message_validation?: string },
+  ) {
+    return this.adminService.updatePreouvertureTamponStatus(id, payload);
+  }
+
+  @Get('ouvertures-compte-tampon')
+  findOuverturesCompteTampon(@Query('status') status?: string) {
+    return this.adminService.findOuverturesCompteTampon(status);
+  }
+
+  @Patch('ouvertures-compte-tampon/:id')
+  updateOuvertureCompteTamponStatus(
+    @Param('id', ParseIntPipe) id: number,
+    @Body()
+    payload: { statut_validation?: string; message_validation?: string },
+  ) {
+    return this.adminService.updateOuvertureCompteTamponStatus(id, payload);
+  }
+
   @Get('typecomptes/:idtype')
   findTypecompteById(@Param('idtype', ParseIntPipe) idtype: number) {
     return this.adminService.findTypecompteById(idtype);

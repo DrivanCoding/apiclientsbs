@@ -33,6 +33,8 @@ import { ListeOperator } from '../entities/liste-operator.entity';
 import { Setting } from '../entities/setting.entity';
 import { AppEntity } from '../entities/app.entity';
 import { Notification } from '../entities/notification.entity';
+import { OuvertureCompteTampon } from '../entities/ouverture-compte-tampon.entity';
+import { PreouvertureClientTampon } from '../entities/preouverture-client-tampon.entity';
 
 @Injectable()
 export class AdminService {
@@ -59,6 +61,10 @@ export class AdminService {
     private readonly appRepository: Repository<AppEntity>,
     @InjectRepository(Notification)
     private readonly notificationRepository: Repository<Notification>,
+    @InjectRepository(OuvertureCompteTampon)
+    private readonly ouvertureTamponRepository: Repository<OuvertureCompteTampon>,
+    @InjectRepository(PreouvertureClientTampon)
+    private readonly preouvertureTamponRepository: Repository<PreouvertureClientTampon>,
   ) {}
 
   async createUser(dto: CreateAdminUserDto) {
@@ -150,8 +156,10 @@ export class AdminService {
     if (dto.idag !== undefined) updatePayload.idag = dto.idag;
     if (dto.nom !== undefined) updatePayload.nom = dto.nom.trim().toUpperCase();
     if (dto.prenom !== undefined) updatePayload.prenom = dto.prenom.trim();
-    if (dto.email !== undefined) updatePayload.email = dto.email.trim().toLowerCase();
-    if (dto.login !== undefined) updatePayload.login = dto.login.trim().toLowerCase();
+    if (dto.email !== undefined)
+      updatePayload.email = dto.email.trim().toLowerCase();
+    if (dto.login !== undefined)
+      updatePayload.login = dto.login.trim().toLowerCase();
     if (dto.password !== undefined) {
       updatePayload.password = await bcrypt.hash(dto.password.trim(), 10);
     }
@@ -230,15 +238,20 @@ export class AdminService {
     }
 
     const updatePayload: Partial<Agence> = {};
-    if (dto.idcompagnie !== undefined) updatePayload.idcompagnie = dto.idcompagnie;
-    if (dto.nom_agence !== undefined) updatePayload.nom_agence = dto.nom_agence.trim();
-    if (dto.alias_agence !== undefined) updatePayload.alias_agence = dto.alias_agence.trim();
+    if (dto.idcompagnie !== undefined)
+      updatePayload.idcompagnie = dto.idcompagnie;
+    if (dto.nom_agence !== undefined)
+      updatePayload.nom_agence = dto.nom_agence.trim();
+    if (dto.alias_agence !== undefined)
+      updatePayload.alias_agence = dto.alias_agence.trim();
     if (dto.ville !== undefined) updatePayload.ville = dto.ville.trim();
     if (dto.telephone_agence !== undefined) {
       updatePayload.telephone_agence = dto.telephone_agence.trim();
     }
-    if (dto.date_ouverture !== undefined) updatePayload.date_ouverture = dto.date_ouverture;
-    if (dto.statut_agence !== undefined) updatePayload.statut_agence = dto.statut_agence;
+    if (dto.date_ouverture !== undefined)
+      updatePayload.date_ouverture = dto.date_ouverture;
+    if (dto.statut_agence !== undefined)
+      updatePayload.statut_agence = dto.statut_agence;
 
     if (Object.keys(updatePayload).length === 0) {
       throw new BadRequestException('Aucune donnee a mettre a jour');
@@ -271,7 +284,9 @@ export class AdminService {
   }
 
   async findClients() {
-    const clients = await this.clientRepository.find({ order: { idclient: 'ASC' } });
+    const clients = await this.clientRepository.find({
+      order: { idclient: 'ASC' },
+    });
     return clients.map((client) => this.toClientResponse(client));
   }
 
@@ -291,15 +306,21 @@ export class AdminService {
       }
     }
 
-    const idclient = dto.idclient ?? (await this.nextId(this.clientRepository, 'idclient'));
-    const codeClient = dto.code_client?.trim() || this.generateClientCode(idclient);
+    const idclient =
+      dto.idclient ?? (await this.nextId(this.clientRepository, 'idclient'));
+    const codeClient =
+      dto.code_client?.trim() || this.generateClientCode(idclient);
     const existingId = await this.clientRepository.findOneBy({ idclient });
     if (existingId) {
       if (existingId.code_client !== codeClient) {
-        const existingCodeForOtherClient = await this.clientRepository.findOneBy({
-          code_client: codeClient,
-        });
-        if (existingCodeForOtherClient && existingCodeForOtherClient.idclient !== idclient) {
+        const existingCodeForOtherClient =
+          await this.clientRepository.findOneBy({
+            code_client: codeClient,
+          });
+        if (
+          existingCodeForOtherClient &&
+          existingCodeForOtherClient.idclient !== idclient
+        ) {
           throw new ConflictException('Ce code client existe deja');
         }
       }
@@ -316,7 +337,10 @@ export class AdminService {
       existingId.telephone_principal = dto.telephone_principal?.trim();
       existingId.idag = dto.idag;
       if (dto.mot_de_passe) {
-        existingId.mot_de_passe = await bcrypt.hash(dto.mot_de_passe.trim(), 10);
+        existingId.mot_de_passe = await bcrypt.hash(
+          dto.mot_de_passe.trim(),
+          10,
+        );
       }
       const savedExisting = await this.clientRepository.save(existingId);
       return this.toClientResponse(savedExisting);
@@ -393,12 +417,16 @@ export class AdminService {
       updatePayload.code_postal = dto.code_postal.trim();
     }
     if (dto.ville !== undefined) updatePayload.ville = dto.ville.trim();
-    if (dto.email !== undefined) updatePayload.email = dto.email.trim().toLowerCase();
+    if (dto.email !== undefined)
+      updatePayload.email = dto.email.trim().toLowerCase();
     if (dto.telephone_principal !== undefined) {
       updatePayload.telephone_principal = dto.telephone_principal.trim();
     }
     if (dto.mot_de_passe !== undefined) {
-      updatePayload.mot_de_passe = await bcrypt.hash(dto.mot_de_passe.trim(), 10);
+      updatePayload.mot_de_passe = await bcrypt.hash(
+        dto.mot_de_passe.trim(),
+        10,
+      );
     }
     if (dto.idag !== undefined) updatePayload.idag = dto.idag;
 
@@ -416,7 +444,9 @@ export class AdminService {
       throw new NotFoundException('Client introuvable');
     }
 
-    const comptesCount = await this.compteRepository.count({ where: { idclient } });
+    const comptesCount = await this.compteRepository.count({
+      where: { idclient },
+    });
     if (comptesCount > 0) {
       throw new BadRequestException(
         'Suppression impossible: ce client possede encore des comptes',
@@ -431,6 +461,52 @@ export class AdminService {
     return this.typecompteRepository.find({ order: { idtype: 'ASC' } });
   }
 
+  findPreouverturesTampon(status?: string) {
+    return this.preouvertureTamponRepository.find({
+      where: status ? { statut_validation: status } : undefined,
+      order: { created_at: 'DESC' },
+    });
+  }
+
+  findOuverturesCompteTampon(status?: string) {
+    return this.ouvertureTamponRepository.find({
+      where: status ? { statut_validation: status } : undefined,
+      order: { created_at: 'DESC' },
+    });
+  }
+
+  async updatePreouvertureTamponStatus(
+    id: number,
+    payload: { statut_validation?: string; message_validation?: string },
+  ) {
+    const demande = await this.preouvertureTamponRepository.findOneBy({ id });
+    if (!demande) {
+      throw new NotFoundException('Preouverture tampon introuvable');
+    }
+    demande.statut_validation =
+      payload.statut_validation ?? demande.statut_validation;
+    demande.message_validation =
+      payload.message_validation ?? demande.message_validation;
+    demande.updated_at = new Date();
+    return this.preouvertureTamponRepository.save(demande);
+  }
+
+  async updateOuvertureCompteTamponStatus(
+    id: number,
+    payload: { statut_validation?: string; message_validation?: string },
+  ) {
+    const demande = await this.ouvertureTamponRepository.findOneBy({ id });
+    if (!demande) {
+      throw new NotFoundException('Ouverture compte tampon introuvable');
+    }
+    demande.statut_validation =
+      payload.statut_validation ?? demande.statut_validation;
+    demande.message_validation =
+      payload.message_validation ?? demande.message_validation;
+    demande.updated_at = new Date();
+    return this.ouvertureTamponRepository.save(demande);
+  }
+
   async findTypecompteById(idtype: number) {
     const typecompte = await this.typecompteRepository.findOneBy({ idtype });
     if (!typecompte) {
@@ -440,15 +516,22 @@ export class AdminService {
   }
 
   async createTypecompte(dto: CreateAdminTypecompteDto) {
-    const idtype = dto.idtype ?? (await this.nextId(this.typecompteRepository, 'idtype'));
+    const idtype =
+      dto.idtype ?? (await this.nextId(this.typecompteRepository, 'idtype'));
     const existing = await this.typecompteRepository.findOneBy({ idtype });
     if (existing) {
       existing.libelle = dto.libelle.trim();
       existing.description = dto.description?.trim();
       existing.taux_interet = this.toDecimalString(dto.taux_interet, 2, 0);
-      existing.frais_tenue_compte = this.toDecimalString(dto.frais_tenue_compte, 2, 0);
+      existing.frais_tenue_compte = this.toDecimalString(
+        dto.frais_tenue_compte,
+        2,
+        0,
+      );
       existing.plafond =
-        dto.plafond !== undefined ? this.toDecimalString(dto.plafond, 2) : undefined;
+        dto.plafond !== undefined
+          ? this.toDecimalString(dto.plafond, 2)
+          : undefined;
       existing.frais_ouverture = dto.frais_ouverture;
       existing.frais_retrait = dto.frais_retrait;
       existing.code_type = dto.code_type?.trim();
@@ -469,7 +552,9 @@ export class AdminService {
       taux_interet: this.toDecimalString(dto.taux_interet, 2, 0),
       frais_tenue_compte: this.toDecimalString(dto.frais_tenue_compte, 2, 0),
       plafond:
-        dto.plafond !== undefined ? this.toDecimalString(dto.plafond, 2) : undefined,
+        dto.plafond !== undefined
+          ? this.toDecimalString(dto.plafond, 2)
+          : undefined,
       frais_ouverture: dto.frais_ouverture,
       frais_retrait: dto.frais_retrait,
       code_type: dto.code_type?.trim(),
@@ -493,7 +578,8 @@ export class AdminService {
 
     const updatePayload: Partial<Typecompte> = {};
     if (dto.libelle !== undefined) updatePayload.libelle = dto.libelle.trim();
-    if (dto.description !== undefined) updatePayload.description = dto.description.trim();
+    if (dto.description !== undefined)
+      updatePayload.description = dto.description.trim();
     if (dto.taux_interet !== undefined) {
       updatePayload.taux_interet = this.toDecimalString(dto.taux_interet, 2, 0);
     }
@@ -513,8 +599,10 @@ export class AdminService {
     if (dto.frais_retrait !== undefined) {
       updatePayload.frais_retrait = dto.frais_retrait;
     }
-    if (dto.code_type !== undefined) updatePayload.code_type = dto.code_type.trim();
-    if (dto.idcategorie !== undefined) updatePayload.idcategorie = dto.idcategorie;
+    if (dto.code_type !== undefined)
+      updatePayload.code_type = dto.code_type.trim();
+    if (dto.idcategorie !== undefined)
+      updatePayload.idcategorie = dto.idcategorie;
     if (dto.numero !== undefined) updatePayload.numero = dto.numero;
     if (dto.type !== undefined) updatePayload.type = dto.type;
     if (dto.mobile_sync_enabled !== undefined) {
@@ -544,7 +632,9 @@ export class AdminService {
       throw new NotFoundException('Type de compte introuvable');
     }
 
-    const comptesCount = await this.compteRepository.count({ where: { idtype } });
+    const comptesCount = await this.compteRepository.count({
+      where: { idtype },
+    });
     if (comptesCount > 0) {
       throw new BadRequestException(
         'Suppression impossible: ce type de compte est utilise par des comptes',
@@ -690,9 +780,11 @@ export class AdminService {
       throw new NotFoundException('Agence introuvable pour ce compte client');
     }
 
-    const idcompte = dto.idcompte ?? (await this.nextId(this.compteRepository, 'idcompte'));
+    const idcompte =
+      dto.idcompte ?? (await this.nextId(this.compteRepository, 'idcompte'));
     const numeroCompte =
-      dto.numero_compte?.trim() || this.generateClientNumeroCompte(idag, idclient, idcompte);
+      dto.numero_compte?.trim() ||
+      this.generateClientNumeroCompte(idag, idclient, idcompte);
 
     const existingId = await this.compteRepository.findOneBy({ idcompte });
     if (existingId) {
@@ -700,16 +792,22 @@ export class AdminService {
         throw new ConflictException('Cet identifiant compte existe deja');
       }
 
-      const existingNumeroForOtherCompte = await this.compteRepository.findOneBy({
-        numero_compte: numeroCompte,
-      });
-      if (existingNumeroForOtherCompte && existingNumeroForOtherCompte.idcompte !== idcompte) {
+      const existingNumeroForOtherCompte =
+        await this.compteRepository.findOneBy({
+          numero_compte: numeroCompte,
+        });
+      if (
+        existingNumeroForOtherCompte &&
+        existingNumeroForOtherCompte.idcompte !== idcompte
+      ) {
         throw new ConflictException('Ce numero de compte existe deja');
       }
 
       existingId.idag = idag;
       existingId.idtype = dto.idtype;
-      existingId.solde = (dto.solde_initial ?? Number(existingId.solde ?? 0)).toFixed(2);
+      existingId.solde = (
+        dto.solde_initial ?? Number(existingId.solde ?? 0)
+      ).toFixed(2);
       existingId.numero_compte = numeroCompte;
       if (dto.pin_code) {
         existingId.pin_code = await this.hashPin(dto.pin_code);
@@ -739,7 +837,9 @@ export class AdminService {
 
     if (dto.solde_initial !== undefined && dto.solde_initial > 0) {
       try {
-        const formatted = new Intl.NumberFormat('fr-FR').format(Math.round(dto.solde_initial));
+        const formatted = new Intl.NumberFormat('fr-FR').format(
+          Math.round(dto.solde_initial),
+        );
         const notification = this.notificationRepository.create({
           idclient,
           titre: 'Versement synchronise',
@@ -749,7 +849,10 @@ export class AdminService {
         });
         await this.notificationRepository.save(notification);
       } catch (err) {
-        console.error('Failed to create initial balance sync notification:', err);
+        console.error(
+          'Failed to create initial balance sync notification:',
+          err,
+        );
       }
     }
 
@@ -829,12 +932,16 @@ export class AdminService {
     const updated = await this.findClientCompteByIdOrFail(idclient, idcompte);
 
     if (!updated) {
-      throw new NotFoundException('Compte client introuvable apres mise a jour');
+      throw new NotFoundException(
+        'Compte client introuvable apres mise a jour',
+      );
     }
 
     if (isVersementSync && syncDiff > 0) {
       try {
-        const formatted = new Intl.NumberFormat('fr-FR').format(Math.round(syncDiff));
+        const formatted = new Intl.NumberFormat('fr-FR').format(
+          Math.round(syncDiff),
+        );
         const notification = this.notificationRepository.create({
           idclient,
           titre: 'Versement synchronise',
@@ -861,14 +968,19 @@ export class AdminService {
   async resetComptePinForClient(idclient: number, idcompte: number) {
     const compte = await this.findClientCompteByIdOrFail(idclient, idcompte);
 
-    await this.compteRepository.update({ idcompte, idclient }, { pin_code: null });
+    await this.compteRepository.update(
+      { idcompte, idclient },
+      { pin_code: null },
+    );
 
     const updated = await this.findClientCompteByIdOrFail(idclient, idcompte);
     return {
       success: true,
       message:
         'Code PIN reinitialise. Le client peut configurer un nouveau code PIN.',
-      compte: updated ? this.toCompteResponse(updated) : this.toCompteResponse(compte),
+      compte: updated
+        ? this.toCompteResponse(updated)
+        : this.toCompteResponse(compte),
     };
   }
 
@@ -914,7 +1026,10 @@ export class AdminService {
     try {
       rows = await this.transactionRepository
         .createQueryBuilder('t')
-        .select("COALESCE(NULLIF(TRIM(t.operateur), ''), 'inconnu')", 'operateur')
+        .select(
+          "COALESCE(NULLIF(TRIM(t.operateur), ''), 'inconnu')",
+          'operateur',
+        )
         .addSelect('COUNT(t.idtransaction)', 'totalDeposits')
         .addSelect('COALESCE(SUM(t.montant_transaction), 0)', 'totalAmount')
         .where("t.type_transaction = 'versement'")
@@ -1164,7 +1279,9 @@ export class AdminService {
       .getOne();
 
     if (!compte) {
-      throw new NotFoundException("Compte d'agence introuvable pour cette agence");
+      throw new NotFoundException(
+        "Compte d'agence introuvable pour cette agence",
+      );
     }
 
     return compte;
@@ -1260,8 +1377,11 @@ export class AdminService {
         code: this.normalizeOperatorCode(String(item?.code || '')),
         date_creation: String(item?.date_cration || ''),
         idtype:
-          Number(item?.idtype ?? item?.idtypecompte ?? this.defaultOperatorTypeFallbackId) ||
-          this.defaultOperatorTypeFallbackId,
+          Number(
+            item?.idtype ??
+              item?.idtypecompte ??
+              this.defaultOperatorTypeFallbackId,
+          ) || this.defaultOperatorTypeFallbackId,
         idcompte:
           item?.idcompte !== undefined && item?.idcompte !== null
             ? Number(item.idcompte)
@@ -1296,7 +1416,9 @@ export class AdminService {
 
     return new Set(
       rawList
-        .map((item) => this.normalizeOperatorCode(String(item?.operateur || '')))
+        .map((item) =>
+          this.normalizeOperatorCode(String(item?.operateur || '')),
+        )
         .filter(Boolean),
     );
   }
@@ -1311,7 +1433,8 @@ export class AdminService {
     const current = Array.isArray(row.operator_actif) ? row.operator_actif : [];
     const without = current.filter(
       (item) =>
-        this.normalizeOperatorCode(String(item?.operateur || '')) !== normalizedCode,
+        this.normalizeOperatorCode(String(item?.operateur || '')) !==
+        normalizedCode,
     );
 
     row.operator_actif = actif

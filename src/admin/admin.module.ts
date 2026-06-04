@@ -12,6 +12,8 @@ import { ListeOperator } from '../entities/liste-operator.entity';
 import { Setting } from '../entities/setting.entity';
 import { AppEntity } from '../entities/app.entity';
 import { Notification } from '../entities/notification.entity';
+import { OuvertureCompteTampon } from '../entities/ouverture-compte-tampon.entity';
+import { PreouvertureClientTampon } from '../entities/preouverture-client-tampon.entity';
 
 @Module({
   imports: [
@@ -26,6 +28,8 @@ import { Notification } from '../entities/notification.entity';
       Setting,
       AppEntity,
       Notification,
+      OuvertureCompteTampon,
+      PreouvertureClientTampon,
     ]),
   ],
   controllers: [AdminController],

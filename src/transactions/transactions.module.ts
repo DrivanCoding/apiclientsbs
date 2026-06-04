@@ -3,6 +3,8 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { Client } from '../entities/client.entity';
 import { Compte } from '../entities/compte.entity';
 import { Notification } from '../entities/notification.entity';
+import { OuvertureCompteTampon } from '../entities/ouverture-compte-tampon.entity';
+import { PreouvertureClientTampon } from '../entities/preouverture-client-tampon.entity';
 import { Setting } from '../entities/setting.entity';
 import { Transaction } from '../entities/transaction.entity';
 import { Typecompte } from '../entities/typecompte.entity';
@@ -17,6 +19,8 @@ import { TransactionsService } from './transactions.service';
       Compte,
       Client,
       Notification,
+      OuvertureCompteTampon,
+      PreouvertureClientTampon,
       Setting,
       Typecompte,
     ]),

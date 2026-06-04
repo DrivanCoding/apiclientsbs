@@ -16,11 +16,14 @@ import {
 import { Client } from '../entities/client.entity';
 import { Compte } from '../entities/compte.entity';
 import { Notification } from '../entities/notification.entity';
+import { OuvertureCompteTampon } from '../entities/ouverture-compte-tampon.entity';
+import { PreouvertureClientTampon } from '../entities/preouverture-client-tampon.entity';
 import { Setting } from '../entities/setting.entity';
 import { Transaction } from '../entities/transaction.entity';
 import { Typecompte } from '../entities/typecompte.entity';
 import { PaynoteService } from '../paynote/paynote.service';
 import { DepositDto } from './dto/deposit.dto';
+import { OuvertureCompteDto } from './dto/ouverture-compte.dto';
 import { PreouvertureDto } from './dto/preouverture.dto';
 
 const SYSTEM_USER_ID = 1;
@@ -41,6 +44,10 @@ export class TransactionsService {
     private readonly compteRepository: Repository<Compte>,
     @InjectRepository(Client)
     private readonly clientRepository: Repository<Client>,
+    @InjectRepository(OuvertureCompteTampon)
+    private readonly ouvertureTamponRepository: Repository<OuvertureCompteTampon>,
+    @InjectRepository(PreouvertureClientTampon)
+    private readonly preouvertureTamponRepository: Repository<PreouvertureClientTampon>,
     @InjectRepository(Setting)
     private readonly settingRepository: Repository<Setting>,
     @InjectRepository(Typecompte)
@@ -146,6 +153,115 @@ export class TransactionsService {
     });
   }
 
+  async openableTypecomptes(authenticatedClientId: number) {
+    if (!authenticatedClientId) {
+      throw new UnauthorizedException('Utilisateur non authentifie');
+    }
+
+    const existingComptes = await this.compteRepository.find({
+      where: { idclient: authenticatedClientId },
+      select: ['idtype'],
+    });
+    const existingTypeIds = existingComptes.map((compte) => compte.idtype);
+
+    const pendingDemandes = await this.ouvertureTamponRepository.find({
+      where: {
+        idclient: authenticatedClientId,
+        statut_validation: 'pending_validation',
+      },
+      select: ['idtype'],
+    });
+    for (const demande of pendingDemandes) {
+      if (!existingTypeIds.includes(demande.idtype)) {
+        existingTypeIds.push(demande.idtype);
+      }
+    }
+
+    const query = this.typeCompteRepository
+      .createQueryBuilder('typecompte')
+      .where('typecompte.mobile_sync_enabled = 1')
+      .andWhere('typecompte.mobile_can_open = 1');
+
+    if (existingTypeIds.length > 0) {
+      query.andWhere('typecompte.idtype NOT IN (:...existingTypeIds)', {
+        existingTypeIds,
+      });
+    }
+
+    const types = await query.orderBy('typecompte.idtype', 'ASC').getMany();
+
+    return types.map((typeCompte) => this.openableTypeResponse(typeCompte));
+  }
+
+  async requestCompteOpening(
+    dto: OuvertureCompteDto,
+    authenticatedClientId: number,
+  ) {
+    if (!authenticatedClientId) {
+      throw new UnauthorizedException('Utilisateur non authentifie');
+    }
+
+    const client = await this.clientRepository.findOneBy({
+      idclient: authenticatedClientId,
+    });
+    if (!client) {
+      throw new NotFoundException('Client introuvable');
+    }
+
+    const typeCompte = await this.assertMobileOpeningAllowed(dto.idtype);
+    await this.assertTypeNotOwned(authenticatedClientId, dto.idtype);
+
+    const minimum = this.openingMinimum(typeCompte);
+    if (dto.montant_initial < minimum) {
+      throw new BadRequestException(
+        `Montant initial insuffisant. Le minimum est ${minimum} XAF.`,
+      );
+    }
+
+    const normalizedOperator = await this.normalizeOperator(dto.operateur);
+    const references =
+      dto.references?.trim() ||
+      `OUV-${Date.now()}-${Math.floor(Math.random() * 10000)
+        .toString()
+        .padStart(4, '0')}`;
+    const description =
+      dto.description?.trim() ||
+      `Ouverture compte ${typeCompte.libelle} ${normalizedOperator.toUpperCase()} - ${dto.numero_telephone}`;
+
+    const payment = await this.collectWithPaynote({
+      operateur: normalizedOperator,
+      numeroTelephone: dto.numero_telephone,
+      montant: dto.montant_initial,
+      references,
+      description,
+    });
+
+    const demande = await this.ouvertureTamponRepository.save(
+      this.ouvertureTamponRepository.create({
+        idclient: authenticatedClientId,
+        idtype: typeCompte.idtype,
+        idag: client.idag,
+        montant_initial: dto.montant_initial.toFixed(2),
+        frais_ouverture: Number(typeCompte.frais_ouverture || 0),
+        montant_minimum: minimum.toFixed(2),
+        operateur: normalizedOperator,
+        numero_telephone: dto.numero_telephone.trim(),
+        references,
+        description,
+        payment_json: JSON.stringify(payment),
+        statut_validation: 'pending_validation',
+        updated_at: new Date(),
+      }),
+    );
+
+    return {
+      message: 'Demande d ouverture envoyee, en attente de validation',
+      demande,
+      payment,
+      status: 'pending_validation',
+    };
+  }
+
   async findByClient(idclient: number) {
     try {
       return await this.repository
@@ -225,6 +341,14 @@ export class TransactionsService {
 
     const normalizedOperator = await this.normalizeOperator(dto.operateur);
     const idtype = dto.idtype ?? this.resolveTypeCompte(dto.type_compte);
+    const typeCompte = await this.assertMobileOpeningAllowed(idtype);
+    const minimum = this.openingMinimum(typeCompte);
+    if (dto.montant_initial < minimum) {
+      throw new BadRequestException(
+        `Montant initial insuffisant. Le minimum est ${minimum} XAF.`,
+      );
+    }
+
     const references = dto.references?.trim() || this.buildOrderId();
     const description =
       dto.description?.trim() ||
@@ -238,78 +362,42 @@ export class TransactionsService {
       description,
     });
 
-    return this.dataSource.transaction(async (manager) => {
-      const nextClientId = await this.nextId(manager, 'clients', 'idclient');
-      const nextCompteId = await this.nextId(manager, 'compte', 'idcompte');
-
-      const client = manager.create(Client, {
-        idclient: nextClientId,
-        code_client: this.buildCodeClient(dto.idag, nextClientId),
+    const demande = await this.preouvertureTamponRepository.save(
+      this.preouvertureTamponRepository.create({
         nom: dto.nom.trim().toUpperCase(),
         prenom: dto.prenom?.trim(),
-        piece_identite: this.normalizePieceIdentite(dto.type_piece),
+        email: dto.email.trim().toLowerCase(),
+        telephone_principal: dto.telephone_principal.trim(),
+        mot_de_passe: dto.mot_de_passe,
+        type_piece: this.normalizePieceIdentite(dto.type_piece),
         num_piece_identite:
           dto.num_piece_identite?.trim() || `TMP-${Date.now()}`,
         adresse: dto.adresse?.trim() || 'Non renseignee',
         code_postal: dto.code_postal?.trim() || '0000',
         ville: dto.ville?.trim() || 'Non renseignee',
-        email: dto.email.trim().toLowerCase(),
-        telephone_principal: dto.telephone_principal.trim(),
-        mot_de_passe: dto.mot_de_passe,
-        photo_identite: photoProfil,
-        signature,
-        commentaires: photoCni
-          ? JSON.stringify({ photo_cni: photoCni })
-          : undefined,
         idag: dto.idag,
-      });
-      const savedClient = await manager.save(client);
-
-      const compte = manager.create(Compte, {
-        idcompte: nextCompteId,
         idtype,
-        solde: dto.montant_initial.toFixed(2),
-        idclient: savedClient.idclient,
-        idag: dto.idag,
-        numero_compte: this.buildNumeroCompte(
-          nextCompteId,
-          savedClient.idclient,
-        ),
-      });
-      const savedCompte = await manager.save(compte);
-
-      const transaction = manager.create(Transaction, {
-        iduser: SYSTEM_USER_ID,
-        idcompte: savedCompte.idcompte,
-        montant_transaction: dto.montant_initial.toFixed(2),
-        type_transaction: 'versement',
+        montant_initial: dto.montant_initial.toFixed(2),
+        frais_ouverture: Number(typeCompte.frais_ouverture || 0),
+        montant_minimum: minimum.toFixed(2),
         operateur: normalizedOperator,
-        statut: 'complete',
         references,
         description,
-      });
-      const savedTransaction = await manager.save(transaction);
+        photo_profil: photoProfil,
+        signature,
+        photo_cni: photoCni,
+        payment_json: JSON.stringify(paynoteResult),
+        statut_validation: 'pending_validation',
+        updated_at: new Date(),
+      }),
+    );
 
-      const notification = manager.create(Notification, {
-        idclient: savedClient.idclient,
-        titre: 'Versement reussi',
-        message: this.buildDepositNotificationMessage({
-          amount: dto.montant_initial,
-          numeroCompte: savedCompte.numero_compte,
-        }),
-        type: 'versement',
-        lu: 0,
-      });
-      await manager.save(notification);
-
-      return {
-        message: 'Pre-ouverture et depot initial effectues',
-        client: savedClient,
-        compte: savedCompte,
-        transaction: savedTransaction,
-        payment: paynoteResult,
-      };
-    });
+    return {
+      message: 'Pre-ouverture envoyee, en attente de validation',
+      demande,
+      payment: paynoteResult,
+      status: 'pending_validation',
+    };
   }
 
   private uploadedFileUrl(
@@ -741,8 +829,60 @@ export class TransactionsService {
       Number(typeCompte.mobile_can_view) !== 1 ||
       Number(typeCompte.mobile_can_deposit) !== 1
     ) {
-      throw new NotFoundException('Compte non disponible pour versement mobile');
+      throw new NotFoundException(
+        'Compte non disponible pour versement mobile',
+      );
     }
+  }
+
+  private async assertMobileOpeningAllowed(idtype: number) {
+    const typeCompte = await this.typeCompteRepository.findOneBy({ idtype });
+    if (
+      !typeCompte ||
+      Number(typeCompte.mobile_sync_enabled) !== 1 ||
+      Number(typeCompte.mobile_can_open) !== 1
+    ) {
+      throw new NotFoundException(
+        'Type de compte non disponible pour ouverture mobile',
+      );
+    }
+    return typeCompte;
+  }
+
+  private async assertTypeNotOwned(idclient: number, idtype: number) {
+    const existingCompte = await this.compteRepository.findOne({
+      where: { idclient, idtype },
+    });
+    if (existingCompte) {
+      throw new BadRequestException('Vous avez deja un compte de ce type.');
+    }
+
+    const pendingDemande = await this.ouvertureTamponRepository.findOne({
+      where: { idclient, idtype, statut_validation: 'pending_validation' },
+    });
+    if (pendingDemande) {
+      throw new BadRequestException(
+        'Une demande d ouverture est deja en attente pour ce type de compte.',
+      );
+    }
+  }
+
+  private openingMinimum(typeCompte: Typecompte) {
+    return (
+      Number(typeCompte.plafond || 0) + Number(typeCompte.frais_ouverture || 0)
+    );
+  }
+
+  private openableTypeResponse(typeCompte: Typecompte) {
+    const minimum = this.openingMinimum(typeCompte);
+    return {
+      idtype: typeCompte.idtype,
+      libelle: typeCompte.libelle,
+      description: typeCompte.description,
+      plafond: Number(typeCompte.plafond || 0),
+      frais_ouverture: Number(typeCompte.frais_ouverture || 0),
+      montant_minimum: minimum,
+    };
   }
 
   private normalizePieceIdentite(value?: string): string {
