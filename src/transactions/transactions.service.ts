@@ -319,7 +319,10 @@ export class TransactionsService {
   ) {
     const photoProfil = this.uploadedFileUrl(files, 'photo_profil');
     const signature = this.uploadedFileUrl(files, 'signature');
-    const photoCni = this.uploadedFileUrl(files, 'photo_cni');
+    const legacyPhotoCni = this.uploadedFileUrl(files, 'photo_cni');
+    const photoPieceRecto =
+      this.uploadedFileUrl(files, 'photo_piece_recto') ?? legacyPhotoCni;
+    const photoPieceVerso = this.uploadedFileUrl(files, 'photo_piece_verso');
 
     if (!photoProfil || !signature) {
       this.logger.warn(
@@ -332,10 +335,10 @@ export class TransactionsService {
       );
     }
 
-    if (dto.type_piece && !photoCni) {
-      this.logger.warn('Pre-ouverture avec piece sans photo CNI');
+    if (dto.type_piece && (!photoPieceRecto || !photoPieceVerso)) {
+      this.logger.warn('Pre-ouverture avec piece sans recto/verso');
       throw new BadRequestException(
-        'La photo de la piece d identite est obligatoire.',
+        'Les images CNI/Passport recto et verso sont obligatoires.',
       );
     }
 
@@ -385,7 +388,9 @@ export class TransactionsService {
         description,
         photo_profil: photoProfil,
         signature,
-        photo_cni: photoCni,
+        photo_cni: legacyPhotoCni,
+        photo_piece_recto: photoPieceRecto,
+        photo_piece_verso: photoPieceVerso,
         payment_json: JSON.stringify(paynoteResult),
         statut_validation: 'pending_validation',
         updated_at: new Date(),

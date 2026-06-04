@@ -89,6 +89,8 @@ export class TransactionsController {
     FileFieldsInterceptor(
       [
         { name: 'photo_cni', maxCount: 1 },
+        { name: 'photo_piece_recto', maxCount: 1 },
+        { name: 'photo_piece_verso', maxCount: 1 },
         { name: 'photo_profil', maxCount: 1 },
         { name: 'signature', maxCount: 1 },
       ],

@@ -68,6 +68,12 @@ export class PreouvertureClientTampon {
   @Column({ length: 255, nullable: true })
   photo_cni?: string;
 
+  @Column({ length: 255, nullable: true })
+  photo_piece_recto?: string;
+
+  @Column({ length: 255, nullable: true })
+  photo_piece_verso?: string;
+
   @Column({ type: 'longtext', nullable: true })
   payment_json?: string;
 

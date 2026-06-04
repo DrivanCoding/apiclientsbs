@@ -24,6 +24,8 @@ CREATE TABLE IF NOT EXISTS `sbs_preouverture_client_tampon` (
   `photo_profil` varchar(255) DEFAULT NULL,
   `signature` varchar(255) DEFAULT NULL,
   `photo_cni` varchar(255) DEFAULT NULL,
+  `photo_piece_recto` varchar(255) DEFAULT NULL,
+  `photo_piece_verso` varchar(255) DEFAULT NULL,
   `payment_json` longtext DEFAULT NULL,
   `statut_validation` varchar(30) NOT NULL DEFAULT 'pending_validation',
   `message_validation` text DEFAULT NULL,
@@ -57,3 +59,33 @@ CREATE TABLE IF NOT EXISTS `sbs_ouverture_compte_tampon` (
   KEY `idx_ouv_client_type` (`idclient`, `idtype`),
   KEY `idx_ouv_agence` (`idag`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+DELIMITER $$
+
+DROP PROCEDURE IF EXISTS add_column_if_missing $$
+CREATE PROCEDURE add_column_if_missing(
+    IN p_table VARCHAR(128),
+    IN p_column VARCHAR(128),
+    IN p_definition TEXT
+)
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM INFORMATION_SCHEMA.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME = p_table
+          AND COLUMN_NAME = p_column
+    ) THEN
+        SET @sql = CONCAT('ALTER TABLE `', p_table, '` ADD COLUMN `', p_column, '` ', p_definition);
+        PREPARE stmt FROM @sql;
+        EXECUTE stmt;
+        DEALLOCATE PREPARE stmt;
+    END IF;
+END $$
+
+DELIMITER ;
+
+CALL add_column_if_missing('sbs_preouverture_client_tampon', 'photo_piece_recto', 'VARCHAR(255) NULL AFTER `photo_cni`');
+CALL add_column_if_missing('sbs_preouverture_client_tampon', 'photo_piece_verso', 'VARCHAR(255) NULL AFTER `photo_piece_recto`');
+
+DROP PROCEDURE IF EXISTS add_column_if_missing;
