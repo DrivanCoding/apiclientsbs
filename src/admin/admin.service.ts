@@ -1110,28 +1110,16 @@ export class AdminService {
       dto.idtype_credit ?? dto.idtype ?? this.defaultOperatorTypeFallbackId;
     const idtypeDebit =
       dto.idtype_debit ?? dto.idtype ?? this.defaultOperatorTypeFallbackId;
-    await this.assertTypecompteExists(idtypeCredit);
-    await this.assertTypecompteExists(idtypeDebit);
-
-    const creditCompte = await this.createOperatorGestionCompte(
-      code,
-      idtypeCredit,
-      'credit',
-    );
-    const debitCompte =
-      idtypeDebit === idtypeCredit
-        ? creditCompte
-        : await this.createOperatorGestionCompte(code, idtypeDebit, 'debit');
 
     const operator = {
       nom: dto.nom.trim(),
       code,
       idtype: idtypeCredit,
-      idcompte: creditCompte.idcompte,
+      idcompte: undefined,
       idtype_credit: idtypeCredit,
       idtype_debit: idtypeDebit,
-      idcompte_credit: creditCompte.idcompte,
-      idcompte_debit: debitCompte.idcompte,
+      idcompte_credit: undefined,
+      idcompte_debit: undefined,
       date_creation: new Date().toISOString(),
     };
 
@@ -1175,33 +1163,12 @@ export class AdminService {
     }
 
     if (dto.idtype_credit !== undefined) {
-      await this.assertTypecompteExists(dto.idtype_credit);
       updatedOperator.idtype_credit = dto.idtype_credit;
       updatedOperator.idtype = dto.idtype_credit;
-      updatedOperator.idcompte_credit = (
-        await this.createOperatorGestionCompte(
-          normalizedCode,
-          dto.idtype_credit,
-          'credit',
-        )
-      ).idcompte;
-      updatedOperator.idcompte = updatedOperator.idcompte_credit;
     }
 
     if (dto.idtype_debit !== undefined) {
-      await this.assertTypecompteExists(dto.idtype_debit);
       updatedOperator.idtype_debit = dto.idtype_debit;
-      if (updatedOperator.idtype_credit === dto.idtype_debit) {
-        updatedOperator.idcompte_debit = updatedOperator.idcompte_credit;
-      } else {
-        updatedOperator.idcompte_debit = (
-          await this.createOperatorGestionCompte(
-            normalizedCode,
-            dto.idtype_debit,
-            'debit',
-          )
-        ).idcompte;
-      }
     }
 
     const nextCatalogue = operators.map((item) =>
