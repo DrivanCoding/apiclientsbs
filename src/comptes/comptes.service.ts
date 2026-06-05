@@ -4,6 +4,7 @@ import {
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
 import { InjectRepository } from '@nestjs/typeorm';
 import { IsNull, Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
@@ -27,6 +28,7 @@ export class ComptesService {
     private readonly otpRepository: Repository<ComptePinOtp>,
     @InjectRepository(Typecompte)
     private readonly typeCompteRepository: Repository<Typecompte>,
+    private readonly jwtService: JwtService,
   ) {}
 
   async create(payload: Partial<Compte>) {
@@ -463,5 +465,50 @@ export class ComptesService {
       mobile_can_view: this.asEnabled(typeCompte?.mobile_can_view, true),
       mobile_can_deposit: this.asEnabled(typeCompte?.mobile_can_deposit, true),
     };
+  }
+
+  async getRelevePdf(
+    idcompte: number,
+    idclient: number,
+    dateDebut?: string,
+    dateFin?: string,
+  ): Promise<Buffer> {
+    const compte = await this.repository.findOneBy({ idcompte, idclient });
+    if (!compte) {
+      throw new NotFoundException('Compte introuvable pour ce client');
+    }
+
+    const payload = {
+      sub: 'sbsclient-service',
+      accountType: 'service',
+      iat: Math.floor(Date.now() / 1000),
+      exp: Math.floor(Date.now() / 1000) + 900,
+    };
+    const token = this.jwtService.sign(payload);
+
+    const phpBaseUrl = process.env.PHP_CORE_URL || 'http://localhost/collectApp';
+    const url = new URL(`${phpBaseUrl}/api/releve-compte/${idcompte}`);
+    if (dateDebut) url.searchParams.append('date_debut', dateDebut);
+    if (dateFin) url.searchParams.append('date_fin', dateFin);
+
+    const response = await fetch(url.toString(), {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+      },
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      let errMsg = 'Erreur lors de la génération du relevé';
+      try {
+        const errJson = JSON.parse(errText);
+        if (errJson.error) errMsg = errJson.error;
+      } catch (e) {}
+      throw new BadRequestException(errMsg);
+    }
+
+    const arrayBuffer = await response.arrayBuffer();
+    return Buffer.from(arrayBuffer);
   }
 }
