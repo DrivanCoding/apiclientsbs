@@ -8,6 +8,7 @@ import { PreouvertureClientTampon } from '../entities/preouverture-client-tampon
 import { Setting } from '../entities/setting.entity';
 import { Transaction } from '../entities/transaction.entity';
 import { Typecompte } from '../entities/typecompte.entity';
+import { ListeOperator } from '../entities/liste-operator.entity';
 import { PaynoteModule } from '../paynote/paynote.module';
 import { TransactionsController } from './transactions.controller';
 import { TransactionsService } from './transactions.service';
@@ -23,6 +24,7 @@ import { TransactionsService } from './transactions.service';
       PreouvertureClientTampon,
       Setting,
       Typecompte,
+      ListeOperator,
     ]),
     PaynoteModule,
   ],

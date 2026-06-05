@@ -19,6 +19,7 @@ import { Notification } from '../entities/notification.entity';
 import { OuvertureCompteTampon } from '../entities/ouverture-compte-tampon.entity';
 import { PreouvertureClientTampon } from '../entities/preouverture-client-tampon.entity';
 import { Setting } from '../entities/setting.entity';
+import { ListeOperator } from '../entities/liste-operator.entity';
 import { Transaction } from '../entities/transaction.entity';
 import { Typecompte } from '../entities/typecompte.entity';
 import { PaynoteService } from '../paynote/paynote.service';
@@ -50,6 +51,8 @@ export class TransactionsService {
     private readonly preouvertureTamponRepository: Repository<PreouvertureClientTampon>,
     @InjectRepository(Setting)
     private readonly settingRepository: Repository<Setting>,
+    @InjectRepository(ListeOperator)
+    private readonly listeOperatorRepository: Repository<ListeOperator>,
     @InjectRepository(Typecompte)
     private readonly typeCompteRepository: Repository<Typecompte>,
     private readonly dataSource: DataSource,
@@ -66,6 +69,50 @@ export class TransactionsService {
 
   findOne(id: number) {
     return this.repository.findOneBy({ idtransaction: id });
+  }
+
+  async activeOperators() {
+    const rows = await this.settingRepository.find({
+      order: { idsetting: 'DESC' },
+      take: 1,
+    });
+    const latest = rows[0];
+    const activeRows = Array.isArray(latest?.operator_actif)
+      ? latest.operator_actif
+      : [];
+    const activeCodes = new Set(
+      activeRows
+        .map((item) => this.normalizeOperatorCode(String(item?.operateur || '')))
+        .filter(Boolean),
+    );
+
+    if (activeCodes.size === 0) {
+      return [];
+    }
+
+    const catalogueRows = await this.listeOperatorRepository.find({
+      order: { idliste_operator: 'DESC' },
+      take: 1,
+    });
+    const catalogue = Array.isArray(catalogueRows[0]?.liste_operator)
+      ? catalogueRows[0].liste_operator
+      : [];
+    const labelEntries: Array<[string, string]> = catalogue
+      .map((item) => [
+        this.normalizeOperatorCode(String(item?.code || '')),
+        String(item?.nom || '').trim(),
+      ])
+      .filter(([code, label]) => Boolean(code && label)) as Array<
+      [string, string]
+    >;
+    const labelByCode = new Map<string, string>(
+      labelEntries,
+    );
+
+    return [...activeCodes].map((code) => ({
+      code,
+      nom: labelByCode.get(code) ?? this.operatorFallbackLabel(code),
+    }));
   }
 
   update(id: number, payload: Partial<Transaction>) {
@@ -87,6 +134,7 @@ export class TransactionsService {
 
     const effectiveClientId = authenticatedClientId;
     const normalizedOperator = await this.normalizeOperator(dto.operateur);
+    const operatorLedger = await this.findActiveOperatorLedger(normalizedOperator);
     const references =
       dto.references?.trim() ||
       `COLL-${Date.now()}-${Math.floor(Math.random() * 10000)
@@ -123,6 +171,7 @@ export class TransactionsService {
         montant_transaction: dto.montant_transaction.toFixed(2),
         type_transaction: 'versement',
         operateur: normalizedOperator,
+        idcompteimpact: operatorLedger?.idcompte_debit,
         statut: 'complete',
         references,
         description,
@@ -558,6 +607,19 @@ export class TransactionsService {
     return resolved;
   }
 
+  private normalizeOperatorCode(value: string) {
+    return String(value || '')
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9_-]/g, '');
+  }
+
+  private operatorFallbackLabel(code: string) {
+    if (code === 'om') return 'Orange Money';
+    if (code === 'momo') return 'MTN MoMo';
+    return code.toUpperCase();
+  }
+
   private async readActiveOperatorCodes() {
     const rows = await this.settingRepository.find({
       order: { idsetting: 'DESC' },
@@ -578,6 +640,38 @@ export class TransactionsService {
         )
         .filter(Boolean),
     );
+  }
+
+  private async findActiveOperatorLedger(code: string) {
+    const rows = await this.settingRepository.find({
+      order: { idsetting: 'DESC' },
+      take: 1,
+    });
+    const latest = rows[0];
+    const rawList = Array.isArray(latest?.operator_actif)
+      ? latest.operator_actif
+      : [];
+    const normalizedCode = this.normalizeOperatorCode(code);
+    const row = rawList.find(
+      (item) =>
+        this.normalizeOperatorCode(String(item?.operateur || '')) ===
+        normalizedCode,
+    );
+    if (!row) return null;
+
+    const idcompte = row.idcompte ? Number(row.idcompte) : undefined;
+    return {
+      idtype_credit: Number(row.idtype_credit ?? row.idtypecompte ?? 0) || undefined,
+      idtype_debit: Number(row.idtype_debit ?? row.idtypecompte ?? 0) || undefined,
+      idcompte_credit:
+        row.idcompte_credit !== undefined && row.idcompte_credit !== null
+          ? Number(row.idcompte_credit)
+          : idcompte,
+      idcompte_debit:
+        row.idcompte_debit !== undefined && row.idcompte_debit !== null
+          ? Number(row.idcompte_debit)
+          : idcompte,
+    };
   }
 
   private getPaymentDecision(payment: unknown): PaymentDecision {

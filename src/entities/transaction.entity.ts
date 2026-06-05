@@ -11,6 +11,9 @@ export class Transaction {
  @Column()
  idcompte: number;
 
+ @Column({ nullable: true })
+ idcompteimpact?: number;
+
  @Column('decimal', { precision: 15, scale: 2 })
  montant_transaction: string;
 

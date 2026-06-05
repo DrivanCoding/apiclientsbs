@@ -13,6 +13,10 @@ export class ListeOperator {
     idtype?: number;
     idtypecompte?: number;
     idcompte?: number;
+    idtype_credit?: number;
+    idtype_debit?: number;
+    idcompte_credit?: number;
+    idcompte_debit?: number;
   }>;
 
   @Column({ type: 'datetime', default: () => 'CURRENT_TIMESTAMP' })

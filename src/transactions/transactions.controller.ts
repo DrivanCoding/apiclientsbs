@@ -84,6 +84,11 @@ export class TransactionsController {
     return this.service.requestCompteOpening(dto, idclient);
   }
 
+  @Get('operators')
+  operators() {
+    return this.service.activeOperators();
+  }
+
   @Post('preouverture')
   @UseInterceptors(
     FileFieldsInterceptor(

@@ -1087,6 +1087,10 @@ export class AdminService {
         code: operator.code,
         idtype: operator.idtype,
         idcompte: operator.idcompte,
+        idtype_credit: operator.idtype_credit,
+        idtype_debit: operator.idtype_debit,
+        idcompte_credit: operator.idcompte_credit,
+        idcompte_debit: operator.idcompte_debit,
         actif: activeCodes.has(operator.code),
         date_creation: operator.date_creation,
       }))
@@ -1102,40 +1106,32 @@ export class AdminService {
       throw new ConflictException('Ce code operateur existe deja');
     }
 
-    const typecompte = await this.typecompteRepository.findOneBy({
-      idtype: dto.idtype,
-    });
-    if (!typecompte) {
-      throw new NotFoundException('Type de compte introuvable');
-    }
+    const idtypeCredit =
+      dto.idtype_credit ?? dto.idtype ?? this.defaultOperatorTypeFallbackId;
+    const idtypeDebit =
+      dto.idtype_debit ?? dto.idtype ?? this.defaultOperatorTypeFallbackId;
+    await this.assertTypecompteExists(idtypeCredit);
+    await this.assertTypecompteExists(idtypeDebit);
 
-    const idcompte = await this.nextId(this.compteRepository, 'idcompte');
-    const numero_compte = this.generateOperatorNumeroCompte(code, idcompte);
-    const existingNumero = await this.compteRepository.findOneBy({
-      numero_compte,
-    });
-    if (existingNumero) {
-      throw new ConflictException(
-        'Impossible de creer le compte de gestion: numero deja utilise',
-      );
-    }
-
-    const compteGestion = this.compteRepository.create({
-      idcompte,
-      idtype: typecompte.idtype,
-      solde: '0.00',
-      numero_compte,
-      idclient: undefined,
-      idag: undefined,
-      pin_code: undefined,
-    });
-    await this.compteRepository.save(compteGestion);
+    const creditCompte = await this.createOperatorGestionCompte(
+      code,
+      idtypeCredit,
+      'credit',
+    );
+    const debitCompte =
+      idtypeDebit === idtypeCredit
+        ? creditCompte
+        : await this.createOperatorGestionCompte(code, idtypeDebit, 'debit');
 
     const operator = {
       nom: dto.nom.trim(),
       code,
-      idtype: typecompte.idtype,
-      idcompte,
+      idtype: idtypeCredit,
+      idcompte: creditCompte.idcompte,
+      idtype_credit: idtypeCredit,
+      idtype_debit: idtypeDebit,
+      idcompte_credit: creditCompte.idcompte,
+      idcompte_debit: debitCompte.idcompte,
       date_creation: new Date().toISOString(),
     };
 
@@ -1145,8 +1141,12 @@ export class AdminService {
     const shouldActivate = dto.actif ?? true;
     if (shouldActivate) {
       await this.updateActiveOperator(code, true, {
-        idtypecompte: operator.idtype,
-        idcompte: operator.idcompte,
+        idtypecompte: operator.idtype_credit,
+        idcompte: operator.idcompte_credit,
+        idtype_credit: operator.idtype_credit,
+        idtype_debit: operator.idtype_debit,
+        idcompte_credit: operator.idcompte_credit,
+        idcompte_debit: operator.idcompte_debit,
       });
     }
 
@@ -1169,9 +1169,56 @@ export class AdminService {
       throw new NotFoundException('Operateur introuvable');
     }
 
-    await this.updateActiveOperator(normalizedCode, dto.actif, {
-      idtypecompte: operator.idtype ?? this.defaultOperatorTypeFallbackId,
-      idcompte: operator.idcompte,
+    const updatedOperator = { ...operator };
+    if (dto.nom !== undefined) {
+      updatedOperator.nom = dto.nom.trim();
+    }
+
+    if (dto.idtype_credit !== undefined) {
+      await this.assertTypecompteExists(dto.idtype_credit);
+      updatedOperator.idtype_credit = dto.idtype_credit;
+      updatedOperator.idtype = dto.idtype_credit;
+      updatedOperator.idcompte_credit = (
+        await this.createOperatorGestionCompte(
+          normalizedCode,
+          dto.idtype_credit,
+          'credit',
+        )
+      ).idcompte;
+      updatedOperator.idcompte = updatedOperator.idcompte_credit;
+    }
+
+    if (dto.idtype_debit !== undefined) {
+      await this.assertTypecompteExists(dto.idtype_debit);
+      updatedOperator.idtype_debit = dto.idtype_debit;
+      if (updatedOperator.idtype_credit === dto.idtype_debit) {
+        updatedOperator.idcompte_debit = updatedOperator.idcompte_credit;
+      } else {
+        updatedOperator.idcompte_debit = (
+          await this.createOperatorGestionCompte(
+            normalizedCode,
+            dto.idtype_debit,
+            'debit',
+          )
+        ).idcompte;
+      }
+    }
+
+    const nextCatalogue = operators.map((item) =>
+      item.code === normalizedCode ? updatedOperator : item,
+    );
+    await this.writeOperatorCatalogue(nextCatalogue);
+
+    const activeCodes = await this.readActiveOperatorCodes();
+    const shouldBeActive = dto.actif ?? activeCodes.has(normalizedCode);
+    await this.updateActiveOperator(normalizedCode, shouldBeActive, {
+      idtypecompte:
+        updatedOperator.idtype_credit ?? this.defaultOperatorTypeFallbackId,
+      idcompte: updatedOperator.idcompte_credit,
+      idtype_credit: updatedOperator.idtype_credit,
+      idtype_debit: updatedOperator.idtype_debit,
+      idcompte_credit: updatedOperator.idcompte_credit,
+      idcompte_debit: updatedOperator.idcompte_debit,
     });
     const nextOperators = await this.getSettingsOperators();
     return nextOperators.find((operator) => operator.code === normalizedCode);
@@ -1240,13 +1287,58 @@ export class AdminService {
     return `CLT${String(idclient).padStart(6, '0')}`;
   }
 
-  private generateOperatorNumeroCompte(operatorCode: string, idcompte: number) {
+  private generateOperatorNumeroCompte(
+    operatorCode: string,
+    idcompte: number,
+    role = 'gestion',
+  ) {
     const stamp = Date.now().toString().slice(-6);
     const normalizedCode = this.normalizeOperatorCode(operatorCode)
       .toUpperCase()
       .slice(0, 4)
       .padEnd(2, 'X');
-    return `OP${normalizedCode}${stamp}${String(idcompte).padStart(4, '0')}`;
+    const roleCode = role.toUpperCase().slice(0, 1) || 'G';
+    return `OP${normalizedCode}${roleCode}${stamp}${String(idcompte).padStart(4, '0')}`;
+  }
+
+  private async assertTypecompteExists(idtype: number) {
+    const typecompte = await this.typecompteRepository.findOneBy({ idtype });
+    if (!typecompte) {
+      throw new NotFoundException('Type de compte introuvable');
+    }
+    return typecompte;
+  }
+
+  private async createOperatorGestionCompte(
+    operatorCode: string,
+    idtype: number,
+    role: 'credit' | 'debit',
+  ) {
+    const idcompte = await this.nextId(this.compteRepository, 'idcompte');
+    const numero_compte = this.generateOperatorNumeroCompte(
+      operatorCode,
+      idcompte,
+      role,
+    );
+    const existingNumero = await this.compteRepository.findOneBy({
+      numero_compte,
+    });
+    if (existingNumero) {
+      throw new ConflictException(
+        'Impossible de creer le compte de gestion: numero deja utilise',
+      );
+    }
+
+    const compteGestion = this.compteRepository.create({
+      idcompte,
+      idtype,
+      solde: '0.00',
+      numero_compte,
+      idclient: undefined,
+      idag: undefined,
+      pin_code: undefined,
+    });
+    return this.compteRepository.save(compteGestion);
   }
 
   private async hashPin(pin?: string) {
@@ -1372,21 +1464,42 @@ export class AdminService {
     const rawList = Array.isArray(row.liste_operator) ? row.liste_operator : [];
 
     return rawList
-      .map((item) => ({
-        nom: String(item?.nom || '').trim(),
-        code: this.normalizeOperatorCode(String(item?.code || '')),
-        date_creation: String(item?.date_cration || ''),
-        idtype:
+      .map((item) => {
+        const fallbackType =
           Number(
             item?.idtype ??
               item?.idtypecompte ??
               this.defaultOperatorTypeFallbackId,
-          ) || this.defaultOperatorTypeFallbackId,
-        idcompte:
+          ) || this.defaultOperatorTypeFallbackId;
+        const fallbackCompte =
           item?.idcompte !== undefined && item?.idcompte !== null
             ? Number(item.idcompte)
-            : undefined,
-      }))
+            : undefined;
+        const idtypeCredit =
+          Number(item?.idtype_credit ?? fallbackType) || fallbackType;
+        const idtypeDebit =
+          Number(item?.idtype_debit ?? fallbackType) || fallbackType;
+        const idcompteCredit =
+          item?.idcompte_credit !== undefined && item?.idcompte_credit !== null
+            ? Number(item.idcompte_credit)
+            : fallbackCompte;
+        const idcompteDebit =
+          item?.idcompte_debit !== undefined && item?.idcompte_debit !== null
+            ? Number(item.idcompte_debit)
+            : fallbackCompte;
+
+        return {
+          nom: String(item?.nom || '').trim(),
+          code: this.normalizeOperatorCode(String(item?.code || '')),
+          date_creation: String(item?.date_cration || ''),
+          idtype: idtypeCredit,
+          idcompte: idcompteCredit,
+          idtype_credit: idtypeCredit,
+          idtype_debit: idtypeDebit,
+          idcompte_credit: idcompteCredit,
+          idcompte_debit: idcompteDebit,
+        };
+      })
       .filter((item) => item.nom && item.code);
   }
 
@@ -1396,6 +1509,10 @@ export class AdminService {
       code: string;
       idtype: number;
       idcompte?: number;
+      idtype_credit?: number;
+      idtype_debit?: number;
+      idcompte_credit?: number;
+      idcompte_debit?: number;
       date_creation?: string;
     }>,
   ) {
@@ -1405,6 +1522,10 @@ export class AdminService {
       code: this.normalizeOperatorCode(operator.code),
       idtype: operator.idtype,
       idcompte: operator.idcompte,
+      idtype_credit: operator.idtype_credit ?? operator.idtype,
+      idtype_debit: operator.idtype_debit ?? operator.idtype,
+      idcompte_credit: operator.idcompte_credit ?? operator.idcompte,
+      idcompte_debit: operator.idcompte_debit ?? operator.idcompte,
       date_cration: operator.date_creation || new Date().toISOString(),
     }));
     await this.listeOperatorRepository.save(row);
@@ -1426,7 +1547,14 @@ export class AdminService {
   private async updateActiveOperator(
     code: string,
     actif: boolean,
-    metadata?: { idtypecompte?: number; idcompte?: number },
+    metadata?: {
+      idtypecompte?: number;
+      idcompte?: number;
+      idtype_credit?: number;
+      idtype_debit?: number;
+      idcompte_credit?: number;
+      idcompte_debit?: number;
+    },
   ) {
     const normalizedCode = this.normalizeOperatorCode(code);
     const row = await this.getOrCreateSettingRow();
@@ -1445,6 +1573,16 @@ export class AdminService {
             idtypecompte:
               metadata?.idtypecompte ?? this.defaultOperatorTypeFallbackId,
             idcompte: metadata?.idcompte,
+            idtype_credit:
+              metadata?.idtype_credit ??
+              metadata?.idtypecompte ??
+              this.defaultOperatorTypeFallbackId,
+            idtype_debit:
+              metadata?.idtype_debit ??
+              metadata?.idtypecompte ??
+              this.defaultOperatorTypeFallbackId,
+            idcompte_credit: metadata?.idcompte_credit ?? metadata?.idcompte,
+            idcompte_debit: metadata?.idcompte_debit ?? metadata?.idcompte,
           },
         ]
       : without;

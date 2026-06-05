@@ -25,5 +25,16 @@ export class CreateAdminOperatorDto {
 
   @IsInt()
   @Min(1)
-  idtype: number;
+  @IsOptional()
+  idtype?: number;
+
+  @IsInt()
+  @Min(1)
+  @IsOptional()
+  idtype_credit?: number;
+
+  @IsInt()
+  @Min(1)
+  @IsOptional()
+  idtype_debit?: number;
 }
