@@ -1,9 +1,11 @@
 import {
   Controller,
+  Body,
   Get,
   Param,
   ParseIntPipe,
   Patch,
+  Post,
   Req,
   UseGuards,
 } from '@nestjs/common';
@@ -36,5 +38,19 @@ export class NotificationsController {
   markAllAsRead(@Req() req: { user?: { idclient?: number } }) {
     const idclient = Number(req.user?.idclient || 0);
     return this.service.markAllAsRead(idclient);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('broadcast')
+  broadcast(
+    @Body()
+    body: {
+      titre: string;
+      message: string;
+      type?: string;
+      idclient?: number;
+    },
+  ) {
+    return this.service.broadcast(body);
   }
 }

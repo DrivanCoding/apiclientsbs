@@ -4,6 +4,7 @@ import { Repository } from 'typeorm';
 import { Actualite } from '../entities/actualite.entity';
 import { Notification } from '../entities/notification.entity';
 import { Client } from '../entities/client.entity';
+import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
 export class ActualitesService {
@@ -14,6 +15,7 @@ export class ActualitesService {
     private readonly notificationRepository: Repository<Notification>,
     @InjectRepository(Client)
     private readonly clientRepository: Repository<Client>,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   async findAll(): Promise<Actualite[]> {
@@ -43,7 +45,11 @@ export class ActualitesService {
     });
 
     if (notifications.length > 0) {
-      await this.notificationRepository.save(notifications);
+      const savedNotifications =
+        await this.notificationRepository.save(notifications);
+      savedNotifications.forEach((notification) => {
+        this.notificationsService.emitCreated(notification);
+      });
     }
 
     return savedActualite;

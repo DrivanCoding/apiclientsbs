@@ -2,12 +2,17 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Notification } from '../entities/notification.entity';
+import {
+  NotificationPayload,
+  NotificationsGateway,
+} from './notifications.gateway';
 
 @Injectable()
 export class NotificationsService {
   constructor(
     @InjectRepository(Notification)
     private readonly repository: Repository<Notification>,
+    private readonly gateway: NotificationsGateway,
   ) {}
 
   findByClient(idclient: number) {
@@ -43,5 +48,23 @@ export class NotificationsService {
     return {
       success: true,
     };
+  }
+
+  async broadcast(payload: NotificationPayload) {
+    this.gateway.emitNotification({
+      titre: payload.titre,
+      message: payload.message,
+      type: payload.type ?? 'info',
+      idclient: payload.idclient,
+      date_creation: payload.date_creation ?? new Date(),
+    });
+
+    return {
+      success: true,
+    };
+  }
+
+  emitCreated(notification: Notification) {
+    this.gateway.emitNotification(notification);
   }
 }
