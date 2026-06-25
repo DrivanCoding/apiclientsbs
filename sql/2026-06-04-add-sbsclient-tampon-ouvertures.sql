@@ -7,6 +7,7 @@ CREATE TABLE IF NOT EXISTS `sbs_preouverture_client_tampon` (
   `prenom` varchar(50) DEFAULT NULL,
   `email` varchar(100) NOT NULL,
   `telephone_principal` varchar(20) NOT NULL,
+  `numero_telephone` varchar(20) DEFAULT NULL,
   `mot_de_passe` varchar(255) NOT NULL,
   `type_piece` varchar(50) DEFAULT NULL,
   `num_piece_identite` varchar(50) DEFAULT NULL,
@@ -85,7 +86,10 @@ END $$
 
 DELIMITER ;
 
+CALL add_column_if_missing('sbs_preouverture_client_tampon', 'numero_telephone', 'VARCHAR(20) NULL AFTER `telephone_principal`');
 CALL add_column_if_missing('sbs_preouverture_client_tampon', 'photo_piece_recto', 'VARCHAR(255) NULL AFTER `photo_cni`');
 CALL add_column_if_missing('sbs_preouverture_client_tampon', 'photo_piece_verso', 'VARCHAR(255) NULL AFTER `photo_piece_recto`');
+CALL add_column_if_missing('sbs_preouverture_client_tampon', 'payment_json', 'LONGTEXT NULL AFTER `photo_piece_verso`');
+CALL add_column_if_missing('sbs_ouverture_compte_tampon', 'payment_json', 'LONGTEXT NULL AFTER `description`');
 
 DROP PROCEDURE IF EXISTS add_column_if_missing;

@@ -11,6 +11,7 @@ import {
   Query,
   Req,
   Res,
+  UnauthorizedException,
   UseGuards,
 } from '@nestjs/common';
 import { Response } from 'express';
@@ -87,21 +88,40 @@ export class ComptesController {
   }
 
   @Post(':id/verify-pin')
+  @UseGuards(JwtAuthGuard)
   verifyPin(
     @Param('id', ParseIntPipe) id: number,
     @Body() payload: VerifyComptePinDto,
+    @Req() req: { user?: { idclient?: number } },
   ) {
-    return this.service.verifyPinAndGetCompteDetail(id, payload);
+    return this.service.verifyPinAndGetCompteDetail(id, {
+      ...payload,
+      idclient: this.authenticatedClientId(req),
+    });
   }
 
   @Post('pin/request-otp')
-  requestPinOtp(@Body() payload: RequestPinOtpDto) {
-    return this.service.requestPinSetupOtp(payload);
+  @UseGuards(JwtAuthGuard)
+  requestPinOtp(
+    @Body() payload: RequestPinOtpDto,
+    @Req() req: { user?: { idclient?: number } },
+  ) {
+    return this.service.requestPinSetupOtp({
+      ...payload,
+      idclient: this.authenticatedClientId(req),
+    });
   }
 
   @Post('pin/confirm')
-  confirmPin(@Body() payload: ConfirmPinSetupDto) {
-    return this.service.confirmPinSetup(payload);
+  @UseGuards(JwtAuthGuard)
+  confirmPin(
+    @Body() payload: ConfirmPinSetupDto,
+    @Req() req: { user?: { idclient?: number } },
+  ) {
+    return this.service.confirmPinSetup({
+      ...payload,
+      idclient: this.authenticatedClientId(req),
+    });
   }
 
   @Patch(':id')
@@ -115,5 +135,13 @@ export class ComptesController {
   @Delete(':id')
   remove(@Param('id', ParseIntPipe) id: number) {
     return this.service.remove(id);
+  }
+
+  private authenticatedClientId(req: { user?: { idclient?: number } }) {
+    const idclient = Number(req.user?.idclient || 0);
+    if (idclient <= 0) {
+      throw new UnauthorizedException('Client authentifie introuvable');
+    }
+    return idclient;
   }
 }

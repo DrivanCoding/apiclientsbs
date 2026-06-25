@@ -36,7 +36,13 @@ export class ClientsService {
 
   async update(id: number, payload: Partial<Client>) {
     if (payload.mot_de_passe !== undefined && payload.mot_de_passe !== null) {
-      payload.mot_de_passe = await bcrypt.hash(payload.mot_de_passe.trim(), 10);
+      const isAlreadyHashed =
+        payload.mot_de_passe.startsWith('$2a$') ||
+        payload.mot_de_passe.startsWith('$2b$') ||
+        payload.mot_de_passe.startsWith('$2y$');
+      payload.mot_de_passe = isAlreadyHashed
+        ? payload.mot_de_passe
+        : await bcrypt.hash(payload.mot_de_passe.trim(), 10);
     }
     return this.repository.update(id, payload);
   }

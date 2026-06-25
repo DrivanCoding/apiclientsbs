@@ -24,6 +24,10 @@ export class PreouvertureDto {
   @IsNotEmpty()
   telephone_principal: string;
 
+  @IsOptional()
+  @IsString()
+  numero_telephone?: string;
+
   @IsString()
   @IsNotEmpty()
   mot_de_passe: string;

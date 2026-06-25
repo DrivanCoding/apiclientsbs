@@ -17,6 +17,9 @@ export class PreouvertureClientTampon {
   @Column({ length: 20 })
   telephone_principal: string;
 
+  @Column({ length: 20, nullable: true })
+  numero_telephone?: string;
+
   @Column({ length: 255 })
   mot_de_passe: string;
 

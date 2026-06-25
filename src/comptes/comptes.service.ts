@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { InjectRepository } from '@nestjs/typeorm';
-import { IsNull, Repository } from 'typeorm';
+import { IsNull, Not, Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
 import * as nodemailer from 'nodemailer';
 import { Client } from '../entities/client.entity';
@@ -31,11 +31,34 @@ export class ComptesService {
     private readonly jwtService: JwtService,
   ) {}
 
+  private async getClientMasterPin(idclient: number): Promise<string | null> {
+    const firstCompteWithPin = await this.repository.findOne({
+      where: { idclient, pin_code: Not(IsNull()) },
+      order: { idcompte: 'ASC' },
+    });
+    return firstCompteWithPin?.pin_code || null;
+  }
+
+  private async getFirstCompte(idclient: number): Promise<Compte | null> {
+    return this.repository.findOne({
+      where: { idclient },
+      order: { idcompte: 'ASC' },
+    });
+  }
+
   async create(payload: Partial<Compte>) {
-    const pin_code = await this.hashPin(payload.pin_code);
+    let pin_code = payload.pin_code;
+    if (!pin_code && payload.idclient) {
+      const masterPin = await this.getClientMasterPin(payload.idclient);
+      if (masterPin) {
+        pin_code = masterPin;
+      }
+    } else if (pin_code) {
+      pin_code = await this.hashPin(pin_code);
+    }
     const saved = await this.repository.save({ ...payload, pin_code });
     const typeCompte = await this.findTypeCompte(saved.idtype);
-    return this.toCompteResponse(saved, true, typeCompte);
+    return this.toCompteResponse(saved, true, typeCompte, Boolean(pin_code));
   }
 
   async findAll() {
@@ -59,7 +82,11 @@ export class ComptesService {
       return null;
     }
 
-    return this.toCompteResponse(compte, true, typeCompte);
+    const hasPin = compte.idclient
+      ? (await this.getClientMasterPin(compte.idclient)) !== null
+      : false;
+
+    return this.toCompteResponse(compte, true, typeCompte, hasPin);
   }
 
   async findByClient(idclient: number) {
@@ -68,6 +95,7 @@ export class ComptesService {
       order: { idcompte: 'ASC' },
     });
     const typesById = await this.typeCompteMap();
+    const hasPin = (await this.getClientMasterPin(idclient)) !== null;
 
     return comptes
       .filter((compte) => {
@@ -75,7 +103,7 @@ export class ComptesService {
         return this.isMobileAllowed(typeCompte);
       })
       .map((compte) =>
-        this.toCompteResponse(compte, true, typesById.get(compte.idtype)),
+        this.toCompteResponse(compte, true, typesById.get(compte.idtype), hasPin),
       );
   }
 
@@ -108,16 +136,20 @@ export class ComptesService {
     const typeCompte = await this.findTypeCompte(compte.idtype);
     this.assertMobileAllowed(typeCompte);
 
-    if (!compte.pin_code) {
-      return this.toCompteResponse(compte, true, typeCompte);
+    const masterPin = compte.idclient
+      ? await this.getClientMasterPin(compte.idclient)
+      : compte.pin_code;
+
+    if (!masterPin) {
+      return this.toCompteResponse(compte, true, typeCompte, false);
     }
 
-    const isMatch = await bcrypt.compare(payload.pin_code, compte.pin_code);
+    const isMatch = await bcrypt.compare(payload.pin_code, masterPin);
     if (!isMatch) {
       throw new UnauthorizedException('Code PIN incorrect');
     }
 
-    return this.toCompteResponse(compte, true, typeCompte);
+    return this.toCompteResponse(compte, true, typeCompte, true);
   }
 
   async requestPinSetupOtp(payload: RequestPinOtpDto) {
@@ -131,7 +163,8 @@ export class ComptesService {
     }
     this.assertMobileAllowed(await this.findTypeCompte(compte.idtype));
 
-    if (compte.pin_code) {
+    const masterPin = await this.getClientMasterPin(payload.idclient);
+    if (masterPin) {
       throw new BadRequestException('Le code PIN est deja configure');
     }
 
@@ -182,7 +215,8 @@ export class ComptesService {
     }
     this.assertMobileAllowed(await this.findTypeCompte(compte.idtype));
 
-    if (compte.pin_code) {
+    const masterPin = await this.getClientMasterPin(payload.idclient);
+    if (masterPin) {
       throw new BadRequestException('Le code PIN est deja configure');
     }
 
@@ -220,7 +254,7 @@ export class ComptesService {
     }
 
     const pinHash = await this.hashPin(payload.pin_code);
-    await this.repository.update(compte.idcompte, {
+    await this.repository.update({ idclient: payload.idclient }, {
       pin_code: pinHash,
     });
     await this.otpRepository.update(otpRecord.id, {
@@ -234,7 +268,7 @@ export class ComptesService {
       : undefined;
     return {
       success: true,
-      compte: updated ? this.toCompteResponse(updated, false, typeCompte) : null,
+      compte: updated ? this.toCompteResponse(updated, false, typeCompte, true) : null,
       message: 'Code PIN configure avec succes',
     };
   }
@@ -248,15 +282,26 @@ export class ComptesService {
     const updatePayload =
       pin_code !== undefined ? { ...payload, pin_code } : payload;
 
+    if (pin_code !== undefined) {
+      const compte = await this.repository.findOneBy({ idcompte: id });
+      if (compte && compte.idclient) {
+        await this.repository.update({ idclient: compte.idclient }, { pin_code });
+      }
+    }
+
     const result = await this.repository.update(id, updatePayload);
     const updated = await this.repository.findOneBy({ idcompte: id });
     const typeCompte = updated
       ? await this.findTypeCompte(updated.idtype)
       : undefined;
 
+    const hasPin = updated?.idclient
+      ? (await this.getClientMasterPin(updated.idclient)) !== null
+      : updated ? Boolean(updated.pin_code) : false;
+
     return {
       ...result,
-      compte: updated ? this.toCompteResponse(updated, true, typeCompte) : null,
+      compte: updated ? this.toCompteResponse(updated, true, typeCompte, hasPin) : null,
     };
   }
 
@@ -451,12 +496,14 @@ export class ComptesService {
     compte: Compte,
     includeSensitive = true,
     typeCompte?: Typecompte | null,
+    hasPinOverride?: boolean,
   ) {
     const { pin_code: _pin, ...safeCompte } = compte;
+    const hasPin = hasPinOverride !== undefined ? hasPinOverride : Boolean(_pin);
     return {
       ...safeCompte,
-      solde: includeSensitive ? safeCompte.solde : _pin ? null : safeCompte.solde,
-      has_pin: Boolean(_pin),
+      solde: includeSensitive ? safeCompte.solde : hasPin ? null : safeCompte.solde,
+      has_pin: hasPin,
       libelle: typeCompte?.libelle ?? null,
       type_compte: typeCompte?.libelle ?? null,
       chapitre_comptable: typeCompte?.numero ?? null,

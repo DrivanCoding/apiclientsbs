@@ -82,7 +82,9 @@ export class TransactionsService {
       : [];
     const activeCodes = new Set(
       activeRows
-        .map((item) => this.normalizeOperatorCode(String(item?.operateur || '')))
+        .map((item) =>
+          this.normalizeOperatorCode(String(item?.operateur || '')),
+        )
         .filter(Boolean),
     );
 
@@ -105,9 +107,7 @@ export class TransactionsService {
       .filter(([code, label]) => Boolean(code && label)) as Array<
       [string, string]
     >;
-    const labelByCode = new Map<string, string>(
-      labelEntries,
-    );
+    const labelByCode = new Map<string, string>(labelEntries);
 
     return [...activeCodes].map((code) => ({
       code,
@@ -134,7 +134,8 @@ export class TransactionsService {
 
     const effectiveClientId = authenticatedClientId;
     const normalizedOperator = await this.normalizeOperator(dto.operateur);
-    const operatorLedger = await this.findActiveOperatorLedger(normalizedOperator);
+    const operatorLedger =
+      await this.findActiveOperatorLedger(normalizedOperator);
     const references =
       dto.references?.trim() ||
       `COLL-${Date.now()}-${Math.floor(Math.random() * 10000)
@@ -401,14 +402,16 @@ export class TransactionsService {
       );
     }
 
+    const numeroOperation =
+      dto.numero_telephone?.trim() || dto.telephone_principal.trim();
     const references = dto.references?.trim() || this.buildOrderId();
     const description =
       dto.description?.trim() ||
-      `Depot initial ${normalizedOperator.toUpperCase()} - ${dto.telephone_principal}`;
+      `Depot initial ${normalizedOperator.toUpperCase()} - ${numeroOperation}`;
 
     const paynoteResult = await this.collectWithPaynote({
       operateur: normalizedOperator,
-      numeroTelephone: dto.telephone_principal,
+      numeroTelephone: numeroOperation,
       montant: dto.montant_initial,
       references,
       description,
@@ -420,6 +423,7 @@ export class TransactionsService {
         prenom: dto.prenom?.trim(),
         email: dto.email.trim().toLowerCase(),
         telephone_principal: dto.telephone_principal.trim(),
+        numero_telephone: numeroOperation,
         mot_de_passe: dto.mot_de_passe,
         type_piece: this.normalizePieceIdentite(dto.type_piece),
         num_piece_identite:
@@ -661,8 +665,10 @@ export class TransactionsService {
 
     const idcompte = row.idcompte ? Number(row.idcompte) : undefined;
     return {
-      idtype_credit: Number(row.idtype_credit ?? row.idtypecompte ?? 0) || undefined,
-      idtype_debit: Number(row.idtype_debit ?? row.idtypecompte ?? 0) || undefined,
+      idtype_credit:
+        Number(row.idtype_credit ?? row.idtypecompte ?? 0) || undefined,
+      idtype_debit:
+        Number(row.idtype_debit ?? row.idtypecompte ?? 0) || undefined,
       idcompte_credit:
         row.idcompte_credit !== undefined && row.idcompte_credit !== null
           ? Number(row.idcompte_credit)

@@ -337,10 +337,13 @@ export class AdminService {
       existingId.telephone_principal = dto.telephone_principal?.trim();
       existingId.idag = dto.idag;
       if (dto.mot_de_passe) {
-        existingId.mot_de_passe = await bcrypt.hash(
-          dto.mot_de_passe.trim(),
-          10,
-        );
+        const isAlreadyHashed =
+          dto.mot_de_passe.startsWith('$2a$') ||
+          dto.mot_de_passe.startsWith('$2b$') ||
+          dto.mot_de_passe.startsWith('$2y$');
+        existingId.mot_de_passe = isAlreadyHashed
+          ? dto.mot_de_passe
+          : await bcrypt.hash(dto.mot_de_passe.trim(), 10);
       }
       const savedExisting = await this.clientRepository.save(existingId);
       return this.toClientResponse(savedExisting);
@@ -353,8 +356,16 @@ export class AdminService {
       throw new ConflictException('Ce code client existe deja');
     }
 
+    const isAlreadyHashed =
+      dto.mot_de_passe &&
+      (dto.mot_de_passe.startsWith('$2a$') ||
+        dto.mot_de_passe.startsWith('$2b$') ||
+        dto.mot_de_passe.startsWith('$2y$'));
+
     const mot_de_passe = dto.mot_de_passe
-      ? await bcrypt.hash(dto.mot_de_passe.trim(), 10)
+      ? (isAlreadyHashed
+          ? dto.mot_de_passe
+          : await bcrypt.hash(dto.mot_de_passe.trim(), 10))
       : undefined;
 
     const client = this.clientRepository.create({
@@ -423,10 +434,13 @@ export class AdminService {
       updatePayload.telephone_principal = dto.telephone_principal.trim();
     }
     if (dto.mot_de_passe !== undefined) {
-      updatePayload.mot_de_passe = await bcrypt.hash(
-        dto.mot_de_passe.trim(),
-        10,
-      );
+      const isAlreadyHashed =
+        dto.mot_de_passe.startsWith('$2a$') ||
+        dto.mot_de_passe.startsWith('$2b$') ||
+        dto.mot_de_passe.startsWith('$2y$');
+      updatePayload.mot_de_passe = isAlreadyHashed
+        ? dto.mot_de_passe
+        : await bcrypt.hash(dto.mot_de_passe.trim(), 10);
     }
     if (dto.idag !== undefined) updatePayload.idag = dto.idag;
 
