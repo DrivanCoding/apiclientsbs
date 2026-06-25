@@ -47,18 +47,13 @@ export class ComptesService {
   }
 
   async create(payload: Partial<Compte>) {
-    let pin_code = payload.pin_code;
-    if (!pin_code && payload.idclient) {
-      const masterPin = await this.getClientMasterPin(payload.idclient);
-      if (masterPin) {
-        pin_code = masterPin;
-      }
-    } else if (pin_code) {
-      pin_code = await this.hashPin(pin_code);
-    }
+    const pin_code = await this.hashPin(payload.pin_code);
     const saved = await this.repository.save({ ...payload, pin_code });
     const typeCompte = await this.findTypeCompte(saved.idtype);
-    return this.toCompteResponse(saved, true, typeCompte, Boolean(pin_code));
+    const hasPin = saved.idclient
+      ? (await this.getClientMasterPin(saved.idclient)) !== null
+      : Boolean(pin_code);
+    return this.toCompteResponse(saved, true, typeCompte, hasPin);
   }
 
   async findAll() {
@@ -254,7 +249,11 @@ export class ComptesService {
     }
 
     const pinHash = await this.hashPin(payload.pin_code);
-    await this.repository.update({ idclient: payload.idclient }, {
+    const firstCompte = await this.getFirstCompte(payload.idclient);
+    if (!firstCompte) {
+      throw new NotFoundException('Aucun compte trouve pour ce client');
+    }
+    await this.repository.update(firstCompte.idcompte, {
       pin_code: pinHash,
     });
     await this.otpRepository.update(otpRecord.id, {
@@ -279,13 +278,25 @@ export class ComptesService {
         ? await this.hashPin(payload.pin_code)
         : undefined;
 
-    const updatePayload =
-      pin_code !== undefined ? { ...payload, pin_code } : payload;
+    let updatePayload = { ...payload };
+    if (pin_code !== undefined) {
+      delete (updatePayload as any).pin_code;
+    }
 
     if (pin_code !== undefined) {
       const compte = await this.repository.findOneBy({ idcompte: id });
       if (compte && compte.idclient) {
-        await this.repository.update({ idclient: compte.idclient }, { pin_code });
+        const firstCompte = await this.getFirstCompte(compte.idclient);
+        if (firstCompte) {
+          await this.repository.update(firstCompte.idcompte, { pin_code });
+          if (firstCompte.idcompte === id) {
+            updatePayload = { ...updatePayload, pin_code } as any;
+          }
+        } else {
+          updatePayload = { ...updatePayload, pin_code } as any;
+        }
+      } else {
+        updatePayload = { ...updatePayload, pin_code } as any;
       }
     }
 
