@@ -26,6 +26,9 @@ import { TypecomptesModule } from './typecomptes/typecomptes.module';
 import { UsersModule } from './users/users.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { ActualitesModule } from './actualites/actualites.module';
+import { MavianceTransaction } from './entities/maviance-transaction.entity';
+import { MavianceServiceCache } from './entities/maviance-service-cache.entity';
+import { MavianceModule } from './maviance/maviance.module';
 
 @Module({
   imports: [
@@ -51,6 +54,8 @@ import { ActualitesModule } from './actualites/actualites.module';
         Typecompte,
         User,
         Actualite,
+        MavianceTransaction,
+        MavianceServiceCache,
       ],
       synchronize: false,
     }),
@@ -64,6 +69,7 @@ import { ActualitesModule } from './actualites/actualites.module';
     TypecomptesModule,
     UsersModule,
     ActualitesModule,
+    MavianceModule,
   ],
   controllers: [AppController],
   providers: [AppService],

@@ -12,6 +12,8 @@ import { Setting } from './entities/setting.entity';
 import { Transaction } from './entities/transaction.entity';
 import { Typecompte } from './entities/typecompte.entity';
 import { User } from './entities/user.entity';
+import { MavianceTransaction } from './entities/maviance-transaction.entity';
+import { MavianceServiceCache } from './entities/maviance-service-cache.entity';
 
 export default new DataSource({
   type: 'mysql',
@@ -33,6 +35,8 @@ export default new DataSource({
     Transaction,
     Typecompte,
     User,
+    MavianceTransaction,
+    MavianceServiceCache,
   ],
   migrations: ['dist/migrations/*.js'],
   synchronize: false,

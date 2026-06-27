@@ -9,6 +9,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { IsNull, Not, Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
 import * as nodemailer from 'nodemailer';
+import { randomInt } from 'crypto';
 import { Client } from '../entities/client.entity';
 import { Compte } from '../entities/compte.entity';
 import { ComptePinOtp } from '../entities/compte-pin-otp.entity';
@@ -19,6 +20,8 @@ import { VerifyComptePinDto } from './dto/verify-compte-pin.dto';
 
 @Injectable()
 export class ComptesService {
+  private pinAttemptsMap = new Map<number, number>();
+
   constructor(
     @InjectRepository(Compte)
     private readonly repository: Repository<Compte>,
@@ -139,9 +142,39 @@ export class ComptesService {
       return this.toCompteResponse(compte, true, typeCompte, false);
     }
 
+    if (masterPin === 'LOCKED') {
+      throw new UnauthorizedException(
+        'Code PIN deactive suite a plusieurs tentatives incorrectes. Veuillez contacter votre agence.'
+      );
+    }
+
     const isMatch = await bcrypt.compare(payload.pin_code, masterPin);
     if (!isMatch) {
+      if (compte.idclient) {
+        const attempts = (this.pinAttemptsMap.get(compte.idclient) || 0) + 1;
+        if (attempts >= 5) {
+          this.pinAttemptsMap.delete(compte.idclient);
+          const firstCompte = await this.getFirstCompte(compte.idclient);
+          if (firstCompte) {
+            await this.repository.update(firstCompte.idcompte, {
+              pin_code: 'LOCKED',
+            });
+          }
+          throw new UnauthorizedException(
+            'Code PIN deactive suite a 5 tentatives incorrectes. Veuillez contacter votre agence.'
+          );
+        } else {
+          this.pinAttemptsMap.set(compte.idclient, attempts);
+          throw new UnauthorizedException(
+            `Code PIN incorrect. Tentative ${attempts}/5.`
+          );
+        }
+      }
       throw new UnauthorizedException('Code PIN incorrect');
+    }
+
+    if (compte.idclient) {
+      this.pinAttemptsMap.delete(compte.idclient);
     }
 
     return this.toCompteResponse(compte, true, typeCompte, true);
@@ -160,6 +193,9 @@ export class ComptesService {
 
     const masterPin = await this.getClientMasterPin(payload.idclient);
     if (masterPin) {
+      if (masterPin === 'LOCKED') {
+        throw new BadRequestException('Ce code PIN est deactive. Veuillez contacter votre agence.');
+      }
       throw new BadRequestException('Le code PIN est deja configure');
     }
 
@@ -168,6 +204,27 @@ export class ComptesService {
     });
     if (!client) {
       throw new NotFoundException('Client introuvable');
+    }
+
+    // Check for 2-minute cooldown on OTP requests
+    const lastOtp = await this.otpRepository.findOne({
+      where: {
+        idclient: payload.idclient,
+        idcompte: payload.idcompte,
+      },
+      order: { created_at: 'DESC' },
+    });
+
+    if (lastOtp) {
+      const now = new Date();
+      const diffMs = now.getTime() - lastOtp.created_at.getTime();
+      const cooldownMs = 2 * 60 * 1000; // 2 minutes cooldown
+      if (diffMs < cooldownMs) {
+        const remainingSeconds = Math.ceil((cooldownMs - diffMs) / 1000);
+        throw new BadRequestException(
+          `Veuillez patienter ${remainingSeconds} secondes avant de demander un nouveau code OTP.`
+        );
+      }
     }
 
     await this.otpRepository.delete({
@@ -212,6 +269,9 @@ export class ComptesService {
 
     const masterPin = await this.getClientMasterPin(payload.idclient);
     if (masterPin) {
+      if (masterPin === 'LOCKED') {
+        throw new BadRequestException('Ce code PIN est deactive. Veuillez contacter votre agence.');
+      }
       throw new BadRequestException('Le code PIN est deja configure');
     }
 
@@ -237,14 +297,17 @@ export class ComptesService {
       throw new UnauthorizedException('OTP bloque apres plusieurs tentatives');
     }
 
+    // Increment attempts immediately to prevent race conditions
+    const newAttempts = otpRecord.attempts + 1;
+    await this.otpRepository.update(otpRecord.id, {
+      attempts: newAttempts,
+    });
+
     const isOtpValid = await bcrypt.compare(
       payload.otp_code,
       otpRecord.otp_code_hash,
     );
     if (!isOtpValid) {
-      await this.otpRepository.update(otpRecord.id, {
-        attempts: otpRecord.attempts + 1,
-      });
       throw new UnauthorizedException('Code OTP invalide');
     }
 
@@ -258,7 +321,6 @@ export class ComptesService {
     });
     await this.otpRepository.update(otpRecord.id, {
       consumed_at: now,
-      attempts: otpRecord.attempts + 1,
     });
 
     const updated = await this.repository.findOneBy({ idcompte: compte.idcompte });
@@ -321,8 +383,7 @@ export class ComptesService {
   }
 
   private generateOtpCode() {
-    const value = Math.floor(100000 + Math.random() * 900000);
-    return String(value);
+    return String(randomInt(100000, 1000000));
   }
 
   private async sendPinOtpEmail(
@@ -349,8 +410,10 @@ export class ComptesService {
     ].join('\n');
 
     if (!host || !user || !pass) {
+      const isDev = process.env.NODE_ENV === 'development' || !process.env.NODE_ENV;
+      const loggedOtp = isDev ? otpCode : '******';
       console.warn(
-        `[PIN-OTP] SMTP non configure. OTP compte #${idcompte} pour ${to}: ${otpCode}`,
+        `[PIN-OTP] SMTP non configure. OTP compte #${idcompte} pour ${to}: ${loggedOtp}`,
       );
       return 'console';
     }
@@ -416,8 +479,10 @@ export class ComptesService {
       'https://sms.ebs237.online/smsapi/sendSMS';
 
     if (!user || !password || !senderID) {
+      const isDev = process.env.NODE_ENV === 'development' || !process.env.NODE_ENV;
+      const loggedOtp = isDev ? otpCode : '******';
       console.warn(
-        `[PIN-OTP-SMS] SMS non configure. OTP compte #${idcompte} pour ${phone}: ${otpCode}`,
+        `[PIN-OTP-SMS] SMS non configure. OTP compte #${idcompte} pour ${phone}: ${loggedOtp}`,
       );
       return 'console_sms';
     }
@@ -452,13 +517,36 @@ export class ComptesService {
   }
 
   private smsLooksFailed(raw: string) {
-    const text = raw.trim().toLowerCase();
-    if (!text) return false;
+    const text = raw.trim();
+    if (!text) return true;
+
+    try {
+      const decoded = JSON.parse(text);
+      if (decoded && typeof decoded === 'object') {
+        const status = String(decoded.status ?? decoded.statut ?? '').toLowerCase();
+        const success = String(decoded.success ?? '').toLowerCase();
+        const message = String(decoded.message ?? decoded.error ?? '').toLowerCase();
+
+        if (['error', 'failed', 'ko', '0'].includes(status) || success === 'false') {
+          return true;
+        }
+        if (message.includes('error') || message.includes('erreur') || message.includes('echec')) {
+          return true;
+        }
+        if (['success', 'sent', 'ok', '1', '200'].includes(status) || success === 'true' || decoded.message_id || decoded.sms_id) {
+          return false;
+        }
+      }
+    } catch (e) {
+      // Fallback
+    }
+
+    const lower = text.toLowerCase();
     return (
-      text.includes('error') ||
-      text.includes('erreur') ||
-      text.includes('failed') ||
-      text.includes('echec')
+      lower.includes('error') ||
+      lower.includes('erreur') ||
+      lower.includes('failed') ||
+      lower.includes('echec')
     );
   }
 
