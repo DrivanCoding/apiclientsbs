@@ -63,8 +63,15 @@ export class TransactionsService {
     return this.repository.save(payload);
   }
 
-  findAll() {
-    return this.repository.find();
+  findAll(page?: number, limit?: number) {
+    const options: any = {
+      order: { idtransaction: 'DESC' },
+    };
+    if (page !== undefined && limit !== undefined) {
+      options.skip = (page - 1) * limit;
+      options.take = limit;
+    }
+    return this.repository.find(options);
   }
 
   findOne(id: number) {

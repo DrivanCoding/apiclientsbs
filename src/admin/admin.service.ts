@@ -283,10 +283,15 @@ export class AdminService {
     return { success: true, idag };
   }
 
-  async findClients() {
-    const clients = await this.clientRepository.find({
+  async findClients(page?: number, limit?: number) {
+    const options: any = {
       order: { idclient: 'ASC' },
-    });
+    };
+    if (page !== undefined && limit !== undefined) {
+      options.skip = (page - 1) * limit;
+      options.take = limit;
+    }
+    const clients = await this.clientRepository.find(options);
     return clients.map((client) => this.toClientResponse(client));
   }
 

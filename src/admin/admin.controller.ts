@@ -90,8 +90,13 @@ export class AdminController {
   }
 
   @Get('clients')
-  findClients() {
-    return this.adminService.findClients();
+  findClients(
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    const pageNum = page ? parseInt(page, 10) : undefined;
+    const limitNum = limit ? parseInt(limit, 10) : undefined;
+    return this.adminService.findClients(pageNum, limitNum);
   }
 
   @Get('clients/:idclient')

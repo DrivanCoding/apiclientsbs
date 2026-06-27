@@ -12,6 +12,7 @@ import {
   UploadedFiles,
   UseGuards,
   UseInterceptors,
+  Query,
 } from '@nestjs/common';
 import { FileFieldsInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
@@ -129,8 +130,13 @@ export class TransactionsController {
   }
 
   @Get()
-  findAll() {
-    return this.service.findAll();
+  findAll(
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    const pageNum = page ? parseInt(page, 10) : undefined;
+    const limitNum = limit ? parseInt(limit, 10) : undefined;
+    return this.service.findAll(pageNum, limitNum);
   }
 
   @Get('client/:id')
