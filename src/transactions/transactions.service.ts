@@ -116,10 +116,20 @@ export class TransactionsService {
     >;
     const labelByCode = new Map<string, string>(labelEntries);
 
-    return [...activeCodes].map((code) => ({
-      code,
-      nom: labelByCode.get(code) ?? this.operatorFallbackLabel(code),
-    }));
+    return [...activeCodes].map((code) => {
+      const config = activeRows.find(
+        (item) =>
+          this.normalizeOperatorCode(String(item?.operateur || '')) === code,
+      );
+      const gateway = config && config['gateway'] ? String(config['gateway']).trim().toLowerCase() : 'paynote';
+      const payItemId = config && config['payItemId'] ? Number(config['payItemId']) : null;
+      return {
+        code,
+        nom: labelByCode.get(code) ?? this.operatorFallbackLabel(code),
+        gateway,
+        payItemId,
+      };
+    });
   }
 
   update(id: number, payload: Partial<Transaction>) {
