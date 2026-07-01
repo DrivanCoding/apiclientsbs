@@ -19,8 +19,9 @@ export class MavianceAuthService {
     token: string,
     secret: string,
   ): string {
-    const nonce = crypto.randomBytes(16).toString('hex');
-    const timestamp = Math.floor(Date.now() / 1000).toString();
+    const now = Date.now().toString();
+    const nonce = now;
+    const timestamp = now;
 
     // 1. Prepare and merge all parameters for signature calculation
     const signParams: Record<string, string> = {};
@@ -65,13 +66,12 @@ export class MavianceAuthService {
 
     // 6. Build the final Authorization header (keys/values are double-quoted, comma-separated)
     return [
-      's3pAuth',
-      `s3pAuth_nonce="${nonce}"`,
+      `s3pAuth s3pAuth_timestamp="${timestamp}"`,
       `s3pAuth_signature="${signature}"`,
+      `s3pAuth_nonce="${nonce}"`,
       `s3pAuth_signature_method="HMAC-SHA1"`,
-      `s3pAuth_timestamp="${timestamp}"`,
       `s3pAuth_token="${token}"`,
-    ].join(',');
+    ].join(', ');
   }
 
   /**

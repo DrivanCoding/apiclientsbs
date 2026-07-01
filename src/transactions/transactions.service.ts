@@ -116,13 +116,19 @@ export class TransactionsService {
     >;
     const labelByCode = new Map<string, string>(labelEntries);
 
+    const forcedGateway = this.getConfiguredPaymentGateway();
+
     return [...activeCodes].map((code) => {
       const config = activeRows.find(
         (item) =>
           this.normalizeOperatorCode(String(item?.operateur || '')) === code,
       );
-      const gateway = config && config['gateway'] ? String(config['gateway']).trim().toLowerCase() : 'paynote';
-      const payItemId = config && config['payItemId'] ? Number(config['payItemId']) : null;
+      const storedGateway =
+        config && config['gateway']
+          ? String(config['gateway']).trim().toLowerCase()
+          : 'paynote';
+      const gateway = forcedGateway ?? storedGateway;
+      const payItemId = this.resolveMaviancePayItemId(code, config);
       return {
         code,
         nom: labelByCode.get(code) ?? this.operatorFallbackLabel(code),
@@ -493,6 +499,12 @@ export class TransactionsService {
     references: string;
     description: string;
   }) {
+    if (this.getConfiguredPaymentGateway() === 'maviance') {
+      throw new BadRequestException(
+        'Paynote est desactive par MYAPIOPERATOR=maviance.',
+      );
+    }
+
     try {
       if (payload.operateur === 'om') {
         const init = await this.paynoteService.initPayment();
@@ -633,6 +645,38 @@ export class TransactionsService {
       .trim()
       .toLowerCase()
       .replace(/[^a-z0-9_-]/g, '');
+  }
+
+  private getConfiguredPaymentGateway(): 'paynote' | 'maviance' | null {
+    const value = String(process.env.MYAPIOPERATOR || '')
+      .trim()
+      .toLowerCase();
+
+    if (!value) return null;
+    if (value === 'paynote' || value === 'maviance') return value;
+
+    this.logger.warn(
+      `MYAPIOPERATOR invalide (${value}). Valeurs acceptees: paynote, maviance.`,
+    );
+    return null;
+  }
+
+  private resolveMaviancePayItemId(code: string, config?: any): string | null {
+    const storedPayItemId =
+      config && config['payItemId'] !== undefined && config['payItemId'] !== null
+        ? String(config['payItemId']).trim()
+        : null;
+
+    if (storedPayItemId) {
+      return storedPayItemId;
+    }
+
+    const normalizedCode = this.normalizeOperatorCode(code).toUpperCase();
+    const envByOperator = process.env[`MAVIANCE_PAYITEM_${normalizedCode}`];
+    const envFallback = process.env.MAVIANCE_DEFAULT_PAY_ITEM_ID;
+    const payItemId = String(envByOperator || envFallback || '').trim();
+
+    return payItemId || null;
   }
 
   private operatorFallbackLabel(code: string) {

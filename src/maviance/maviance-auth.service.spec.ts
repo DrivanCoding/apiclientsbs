@@ -22,7 +22,7 @@ describe('MavianceAuthService', () => {
   describe('generateAuthorizationHeader', () => {
     it('should correctly sort parameters and calculate HMAC-SHA1 signature', () => {
       const method = 'POST';
-      const url = 'https://s3p.sandbox.smobilpay.com/v3/collectstd';
+      const url = 'https://s3p.smobilpay.staging.maviance.info/v2/collectstd';
       const params = {
         quoteId: 'quote-12345',
         customerPhonenumber: '237670000000',
@@ -42,7 +42,7 @@ describe('MavianceAuthService', () => {
       expect(header).toContain(`s3pAuth_token="${token}"`);
 
       // Verify header structure using regex
-      const regex = /^s3pAuth,s3pAuth_nonce="[a-f0-9]+",s3pAuth_signature="[A-Za-z0-9+/=]+",s3pAuth_signature_method="HMAC-SHA1",s3pAuth_timestamp="\d+",s3pAuth_token="test-public-token"$/;
+      const regex = /^s3pAuth s3pAuth_timestamp="\d+", s3pAuth_signature="[A-Za-z0-9+/=]+", s3pAuth_nonce="\d+", s3pAuth_signature_method="HMAC-SHA1", s3pAuth_token="test-public-token"$/;
       expect(regex.test(header)).toBe(true);
     });
   });

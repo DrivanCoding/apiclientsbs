@@ -50,8 +50,8 @@ export class MaviancePaymentService {
         await manager.clear(MavianceServiceCache);
         for (const svc of services) {
           const cacheEntry = manager.create(MavianceServiceCache, {
-            payItemId: Number(svc.payItemId),
-            serviceId: Number(svc.serviceId),
+            payItemId: String(svc.payItemId || ''),
+            serviceId: Number(svc.serviceId || svc.serviceid || 0),
             name: String(svc.name || ''),
             category: String(svc.category || ''),
             merchant: String(svc.merchant || ''),
@@ -146,7 +146,7 @@ export class MaviancePaymentService {
       transaction = this.txRepository.create({
         reference,
         quoteId: dto.quoteId,
-        payItemId: 0, // Will be updated from response or defaults
+        payItemId: '', // Will be updated from response or quote if available
         amount: 0, // Will be updated from response or defaults
         customerPhonenumber: dto.customerPhonenumber,
         customerEmailaddress: dto.customerEmailaddress,
@@ -184,7 +184,7 @@ export class MaviancePaymentService {
         transaction.amount = Number(response.amount);
       }
       if (response.payItemId) {
-        transaction.payItemId = Number(response.payItemId);
+        transaction.payItemId = String(response.payItemId);
       }
 
       const status = String(response.status || '').toUpperCase();

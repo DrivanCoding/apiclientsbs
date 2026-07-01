@@ -16,8 +16,8 @@ export class MavianceTransaction {
   @Column({ length: 100, nullable: true })
   quoteId?: string; // Quote ID from the /quotestd response
 
-  @Column({ type: 'int' })
-  payItemId: number; // Payment Item ID (identifying the specific service/utility)
+  @Column({ length: 191 })
+  payItemId: string; // Payment Item ID (identifying the specific service/utility)
 
   @Column('decimal', { precision: 15, scale: 2 })
   amount: number;

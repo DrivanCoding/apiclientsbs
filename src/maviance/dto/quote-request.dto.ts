@@ -1,9 +1,9 @@
 import { IsNotEmpty, IsNumber, IsOptional, IsPositive, IsString } from 'class-validator';
 
 export class QuoteRequestDto {
-  @IsNumber()
+  @IsString()
   @IsNotEmpty()
-  payItemId: number;
+  payItemId: string;
 
   @IsNumber()
   @IsPositive()

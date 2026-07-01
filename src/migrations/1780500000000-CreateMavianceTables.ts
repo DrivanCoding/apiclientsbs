@@ -8,7 +8,7 @@ export class CreateMavianceTables1780500000000 implements MigrationInterface {
     await queryRunner.query(`
       CREATE TABLE IF NOT EXISTS \`maviance_service_cache\` (
         \`id\` int NOT NULL AUTO_INCREMENT,
-        \`payItemId\` int NOT NULL,
+        \`payItemId\` varchar(191) NOT NULL,
         \`serviceId\` int NOT NULL,
         \`name\` varchar(155) NOT NULL,
         \`category\` varchar(100) NOT NULL,
@@ -28,7 +28,7 @@ export class CreateMavianceTables1780500000000 implements MigrationInterface {
         \`reference\` varchar(50) NOT NULL,
         \`ptn\` varchar(100) DEFAULT NULL,
         \`quoteId\` varchar(100) DEFAULT NULL,
-        \`payItemId\` int NOT NULL,
+        \`payItemId\` varchar(191) NOT NULL,
         \`amount\` decimal(15,2) NOT NULL,
         \`currency\` varchar(10) NOT NULL DEFAULT 'XAF',
         \`customerPhonenumber\` varchar(30) NOT NULL,

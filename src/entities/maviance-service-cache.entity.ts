@@ -6,8 +6,8 @@ export class MavianceServiceCache {
   id: number;
 
   @Index({ unique: true })
-  @Column({ type: 'int' })
-  payItemId: number; // Unique payment item identifier from Maviance
+  @Column({ length: 191 })
+  payItemId: string; // Unique payment item identifier from Maviance
 
   @Column({ type: 'int' })
   serviceId: number; // Service category/merchant identifier from Maviance
