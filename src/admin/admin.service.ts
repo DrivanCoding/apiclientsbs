@@ -849,7 +849,7 @@ export class AdminService {
       idtype: dto.idtype,
       solde: (dto.solde_initial ?? 0).toFixed(2),
       numero_compte: numeroCompte,
-      pin_code: await this.hashPin(dto.pin_code),
+      pin_code: dto.pin_code ? await this.hashPin(dto.pin_code) : null,
     });
 
     const saved = await this.compteRepository.save(compte);

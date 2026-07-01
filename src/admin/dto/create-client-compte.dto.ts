@@ -1,5 +1,4 @@
 import {
-  IsNotEmpty,
   IsNumber,
   IsOptional,
   IsString,
@@ -26,10 +25,10 @@ export class CreateClientCompteDto {
   @IsString()
   numero_compte?: string;
 
+  @IsOptional()
   @IsString()
-  @IsNotEmpty()
   @Matches(/^\d{4,6}$/)
-  pin_code: string;
+  pin_code?: string;
 
   @IsOptional()
   @IsNumber()
