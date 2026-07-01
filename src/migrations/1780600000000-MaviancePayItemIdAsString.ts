@@ -6,26 +6,50 @@ export class MaviancePayItemIdAsString1780600000000
   name = 'MaviancePayItemIdAsString1780600000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
-    await queryRunner.query(`
-      ALTER TABLE \`maviance_service_cache\`
-      MODIFY \`payItemId\` varchar(191) NOT NULL
-    `);
+    await this.modifyColumnIfExists(
+      queryRunner,
+      'maviance_service_cache',
+      '`payItemId` varchar(191) NOT NULL',
+    );
 
-    await queryRunner.query(`
-      ALTER TABLE \`maviance_transactions\`
-      MODIFY \`payItemId\` varchar(191) NOT NULL
-    `);
+    await this.modifyColumnIfExists(
+      queryRunner,
+      'maviance_transactions',
+      '`payItemId` varchar(191) NOT NULL',
+    );
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
-    await queryRunner.query(`
-      ALTER TABLE \`maviance_service_cache\`
-      MODIFY \`payItemId\` int NOT NULL
-    `);
+    await this.modifyColumnIfExists(
+      queryRunner,
+      'maviance_service_cache',
+      '`payItemId` int NOT NULL',
+    );
 
-    await queryRunner.query(`
-      ALTER TABLE \`maviance_transactions\`
-      MODIFY \`payItemId\` int NOT NULL
-    `);
+    await this.modifyColumnIfExists(
+      queryRunner,
+      'maviance_transactions',
+      '`payItemId` int NOT NULL',
+    );
+  }
+
+  private async modifyColumnIfExists(
+    queryRunner: QueryRunner,
+    tableName: string,
+    columnDefinition: string,
+  ) {
+    const tableExists = await queryRunner.hasTable(tableName);
+    if (!tableExists) {
+      return;
+    }
+
+    const hasColumn = await queryRunner.hasColumn(tableName, 'payItemId');
+    if (!hasColumn) {
+      return;
+    }
+
+    await queryRunner.query(
+      `ALTER TABLE \`${tableName}\` MODIFY ${columnDefinition}`,
+    );
   }
 }

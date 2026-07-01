@@ -233,39 +233,78 @@ export class CreateSbsClientSchema1780315200000 implements MigrationInterface {
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
     `);
 
-    await queryRunner.query(`
-      ALTER TABLE \`clients\`
-        ADD CONSTRAINT \`fk_client_agence\` FOREIGN KEY (\`idag\`) REFERENCES \`agence\` (\`idag\`)
-    `);
-    await queryRunner.query(`
-      ALTER TABLE \`typecompte\`
-        ADD CONSTRAINT \`typecompte_parent_fk\` FOREIGN KEY (\`idparent\`) REFERENCES \`typecompte\` (\`idtype\`)
-    `);
-    await queryRunner.query(`
-      ALTER TABLE \`compte\`
-        ADD CONSTRAINT \`clientcompte\` FOREIGN KEY (\`idclient\`) REFERENCES \`clients\` (\`idclient\`),
-        ADD CONSTRAINT \`fk_agencecompte\` FOREIGN KEY (\`idag\`) REFERENCES \`agence\` (\`idag\`),
-        ADD CONSTRAINT \`FK_COMPTE_TYPECOMPTE\` FOREIGN KEY (\`idtype\`) REFERENCES \`typecompte\` (\`idtype\`)
-    `);
-    await queryRunner.query(`
-      ALTER TABLE \`user\`
-        ADD CONSTRAINT \`FK_USER_AGENCE\` FOREIGN KEY (\`idag\`) REFERENCES \`agence\` (\`idag\`)
-    `);
-    await queryRunner.query(`
-      ALTER TABLE \`transaction\`
-        ADD CONSTRAINT \`compteImpact\` FOREIGN KEY (\`idcompteimpact\`) REFERENCES \`compte\` (\`idcompte\`),
-        ADD CONSTRAINT \`FK_TRANSACTION_COMPTE\` FOREIGN KEY (\`idcompte\`) REFERENCES \`compte\` (\`idcompte\`),
-        ADD CONSTRAINT \`FK_TRANSACTION_USER\` FOREIGN KEY (\`iduser\`) REFERENCES \`user\` (\`iduser\`)
-    `);
-    await queryRunner.query(`
-      ALTER TABLE \`notification\`
-        ADD CONSTRAINT \`FK_NOTIFICATION_CLIENT\` FOREIGN KEY (\`idclient\`) REFERENCES \`clients\` (\`idclient\`)
-    `);
-    await queryRunner.query(`
-      ALTER TABLE \`compte_pin_otp\`
-        ADD CONSTRAINT \`FK_OTP_COMPTE\` FOREIGN KEY (\`idcompte\`) REFERENCES \`compte\` (\`idcompte\`) ON DELETE CASCADE,
-        ADD CONSTRAINT \`FK_OTP_CLIENT\` FOREIGN KEY (\`idclient\`) REFERENCES \`clients\` (\`idclient\`) ON DELETE CASCADE
-    `);
+    await this.addConstraintIfMissing(
+      queryRunner,
+      'clients',
+      'fk_client_agence',
+      'ADD CONSTRAINT `fk_client_agence` FOREIGN KEY (`idag`) REFERENCES `agence` (`idag`)',
+    );
+    await this.addConstraintIfMissing(
+      queryRunner,
+      'typecompte',
+      'typecompte_parent_fk',
+      'ADD CONSTRAINT `typecompte_parent_fk` FOREIGN KEY (`idparent`) REFERENCES `typecompte` (`idtype`)',
+    );
+    await this.addConstraintIfMissing(
+      queryRunner,
+      'compte',
+      'clientcompte',
+      'ADD CONSTRAINT `clientcompte` FOREIGN KEY (`idclient`) REFERENCES `clients` (`idclient`)',
+    );
+    await this.addConstraintIfMissing(
+      queryRunner,
+      'compte',
+      'fk_agencecompte',
+      'ADD CONSTRAINT `fk_agencecompte` FOREIGN KEY (`idag`) REFERENCES `agence` (`idag`)',
+    );
+    await this.addConstraintIfMissing(
+      queryRunner,
+      'compte',
+      'FK_COMPTE_TYPECOMPTE',
+      'ADD CONSTRAINT `FK_COMPTE_TYPECOMPTE` FOREIGN KEY (`idtype`) REFERENCES `typecompte` (`idtype`)',
+    );
+    await this.addConstraintIfMissing(
+      queryRunner,
+      'user',
+      'FK_USER_AGENCE',
+      'ADD CONSTRAINT `FK_USER_AGENCE` FOREIGN KEY (`idag`) REFERENCES `agence` (`idag`)',
+    );
+    await this.addConstraintIfMissing(
+      queryRunner,
+      'transaction',
+      'compteImpact',
+      'ADD CONSTRAINT `compteImpact` FOREIGN KEY (`idcompteimpact`) REFERENCES `compte` (`idcompte`)',
+    );
+    await this.addConstraintIfMissing(
+      queryRunner,
+      'transaction',
+      'FK_TRANSACTION_COMPTE',
+      'ADD CONSTRAINT `FK_TRANSACTION_COMPTE` FOREIGN KEY (`idcompte`) REFERENCES `compte` (`idcompte`)',
+    );
+    await this.addConstraintIfMissing(
+      queryRunner,
+      'transaction',
+      'FK_TRANSACTION_USER',
+      'ADD CONSTRAINT `FK_TRANSACTION_USER` FOREIGN KEY (`iduser`) REFERENCES `user` (`iduser`)',
+    );
+    await this.addConstraintIfMissing(
+      queryRunner,
+      'notification',
+      'FK_NOTIFICATION_CLIENT',
+      'ADD CONSTRAINT `FK_NOTIFICATION_CLIENT` FOREIGN KEY (`idclient`) REFERENCES `clients` (`idclient`)',
+    );
+    await this.addConstraintIfMissing(
+      queryRunner,
+      'compte_pin_otp',
+      'FK_OTP_COMPTE',
+      'ADD CONSTRAINT `FK_OTP_COMPTE` FOREIGN KEY (`idcompte`) REFERENCES `compte` (`idcompte`) ON DELETE CASCADE',
+    );
+    await this.addConstraintIfMissing(
+      queryRunner,
+      'compte_pin_otp',
+      'FK_OTP_CLIENT',
+      'ADD CONSTRAINT `FK_OTP_CLIENT` FOREIGN KEY (`idclient`) REFERENCES `clients` (`idclient`) ON DELETE CASCADE',
+    );
 
     await queryRunner.query('SET FOREIGN_KEY_CHECKS=1');
   }
@@ -285,5 +324,29 @@ export class CreateSbsClientSchema1780315200000 implements MigrationInterface {
     await queryRunner.query('DROP TABLE IF EXISTS `liste_operator`');
     await queryRunner.query('DROP TABLE IF EXISTS `agence`');
     await queryRunner.query('SET FOREIGN_KEY_CHECKS=1');
+  }
+
+  private async addConstraintIfMissing(
+    queryRunner: QueryRunner,
+    tableName: string,
+    constraintName: string,
+    addConstraintSql: string,
+  ) {
+    const rows = await queryRunner.query(
+      `
+      SELECT CONSTRAINT_NAME
+      FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS
+      WHERE CONSTRAINT_SCHEMA = DATABASE()
+        AND CONSTRAINT_NAME = ?
+      LIMIT 1
+      `,
+      [constraintName],
+    );
+
+    if (Array.isArray(rows) && rows.length > 0) {
+      return;
+    }
+
+    await queryRunner.query(`ALTER TABLE \`${tableName}\` ${addConstraintSql}`);
   }
 }

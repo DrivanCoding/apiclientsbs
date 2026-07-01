@@ -49,14 +49,60 @@ export class CreateMavianceTables1780500000000 implements MigrationInterface {
         \`updatedAt\` datetime(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
         PRIMARY KEY (\`id\`),
         UNIQUE KEY \`idx_mav_tx_reference\` (\`reference\`),
-        KEY \`idx_mav_tx_ptn\` (\`ptn\`),
-        CONSTRAINT \`fk_mav_tx_compte\` FOREIGN KEY (\`idcompte\`) REFERENCES \`compte\` (\`idcompte\`) ON DELETE CASCADE
+        KEY \`idx_mav_tx_ptn\` (\`ptn\`)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
     `);
+
+    await this.addConstraintIfMissing(
+      queryRunner,
+      'maviance_transactions',
+      'fk_mav_tx_compte',
+      'ADD CONSTRAINT `fk_mav_tx_compte` FOREIGN KEY (`idcompte`) REFERENCES `compte` (`idcompte`) ON DELETE CASCADE',
+      'compte',
+    );
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query('DROP TABLE IF EXISTS `maviance_transactions`');
     await queryRunner.query('DROP TABLE IF EXISTS `maviance_service_cache`');
+  }
+
+  private async addConstraintIfMissing(
+    queryRunner: QueryRunner,
+    tableName: string,
+    constraintName: string,
+    addConstraintSql: string,
+    referencedTableName?: string,
+  ) {
+    const tableExists = await queryRunner.hasTable(tableName);
+    if (!tableExists) {
+      return;
+    }
+
+    if (referencedTableName) {
+      const referencedTableExists = await queryRunner.hasTable(
+        referencedTableName,
+      );
+      if (!referencedTableExists) {
+        return;
+      }
+    }
+
+    const rows = await queryRunner.query(
+      `
+      SELECT CONSTRAINT_NAME
+      FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS
+      WHERE CONSTRAINT_SCHEMA = DATABASE()
+        AND CONSTRAINT_NAME = ?
+      LIMIT 1
+      `,
+      [constraintName],
+    );
+
+    if (Array.isArray(rows) && rows.length > 0) {
+      return;
+    }
+
+    await queryRunner.query(`ALTER TABLE \`${tableName}\` ${addConstraintSql}`);
   }
 }
