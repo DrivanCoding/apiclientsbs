@@ -1193,12 +1193,22 @@ export class TransactionsService {
         : error;
     const items = this.extractStatusKeyValues(response);
     const code =
-      items.find((item) => ['errorcode', 'code', 'statuscode'].includes(item.key))
+      items.find((item) =>
+        ['errorcode', 'code', 'statuscode', 'respcode'].includes(item.key),
+      )
         ?.value || '';
     const message =
-      items.find((item) => ['errormessage', 'message', 'reason'].includes(item.key))
+      items.find((item) =>
+        ['errormessage', 'message', 'reason', 'usrmsg', 'devmsg'].includes(
+          item.key,
+        ),
+      )
         ?.value || '';
     const combined = `${code} ${message}`.toLowerCase();
+
+    if (code === '4009' || combined.includes('access token invalid')) {
+      return 'Identifiants Maviance invalides pour cet environnement. Verifiez le token, le secret et l URL S3P.';
+    }
 
     if (combined.includes('insufficient') || code === '703108') {
       return 'Solde payeur insuffisant pour effectuer le paiement.';

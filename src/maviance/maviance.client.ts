@@ -57,7 +57,6 @@ export class MavianceClient {
     let fetchOptions: RequestInit = {
       method,
       headers: {
-        'x-api-version': '3.0.0',
         'Accept': 'application/json',
       },
     };
@@ -108,8 +107,17 @@ export class MavianceClient {
 
       if (!response.ok) {
         // Maviance API errors typically contain a 'code' and 'message' in JSON
-        const errorCode = responseData?.code || responseData?.errorCode || response.status;
-        const errorMessage = responseData?.message || responseData?.errorMessage || `Erreur HTTP ${response.status}`;
+        const errorCode =
+          responseData?.respCode ||
+          responseData?.code ||
+          responseData?.errorCode ||
+          response.status;
+        const errorMessage =
+          responseData?.usrMsg ||
+          responseData?.message ||
+          responseData?.errorMessage ||
+          responseData?.devMsg ||
+          `Erreur HTTP ${response.status}`;
         throw new BadGatewayException({
           message: `Maviance API Error: ${errorMessage}`,
           code: errorCode,
