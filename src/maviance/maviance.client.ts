@@ -6,7 +6,16 @@ export class MavianceClient {
   constructor(private readonly authService: MavianceAuthService) {}
 
   private getBaseUrl(): string {
-    return (process.env.MAVIANCE_BASE_URL || 'https://s3p.sandbox.smobilpay.com/v3').replace(/\/+$/, '');
+    const configuredUrl = (
+      process.env.MAVIANCE_BASE_URL ||
+      'https://s3p.smobilpay.staging.maviance.info/v2'
+    ).replace(/\/+$/, '');
+
+    if (configuredUrl === 'https://s3p.sandbox.smobilpay.com/v3') {
+      return 'https://s3p.smobilpay.staging.maviance.info/v2';
+    }
+
+    return configuredUrl;
   }
 
   private getPublicToken(): string {
