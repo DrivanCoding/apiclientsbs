@@ -22,6 +22,8 @@ import { Setting } from '../entities/setting.entity';
 import { ListeOperator } from '../entities/liste-operator.entity';
 import { Transaction } from '../entities/transaction.entity';
 import { Typecompte } from '../entities/typecompte.entity';
+import { MavianceClient } from '../maviance/maviance.client';
+import { MavianceErrorMapper } from '../maviance/maviance-error.mapper';
 import { PaynoteService } from '../paynote/paynote.service';
 import { DepositDto } from './dto/deposit.dto';
 import { OuvertureCompteDto } from './dto/ouverture-compte.dto';
@@ -57,6 +59,7 @@ export class TransactionsService {
     private readonly typeCompteRepository: Repository<Typecompte>,
     private readonly dataSource: DataSource,
     private readonly paynoteService: PaynoteService,
+    private readonly mavianceClient: MavianceClient,
   ) {}
 
   create(payload: Partial<Transaction>) {
@@ -159,6 +162,15 @@ export class TransactionsService {
     const normalizedOperator = await this.normalizeOperator(dto.operateur);
     const operatorLedger =
       await this.findActiveOperatorLedger(normalizedOperator);
+    const compte = await this.compteRepository.findOne({
+      where: { idcompte: dto.idcompte },
+    });
+
+    if (!compte || compte.idclient !== effectiveClientId) {
+      throw new NotFoundException('Compte introuvable');
+    }
+    await this.assertMobileDepositAllowed(compte.idtype);
+
     const references =
       dto.references?.trim() ||
       `COLL-${Date.now()}-${Math.floor(Math.random() * 10000)
@@ -168,17 +180,20 @@ export class TransactionsService {
       dto.description?.trim() ||
       `Collecte mobile ${normalizedOperator.toUpperCase()} sur ${dto.numero_telephone}`;
 
-    const payment = await this.collectWithPaynote({
+    const payment = await this.collectWithConfiguredGateway({
       operateur: normalizedOperator,
       numeroTelephone: dto.numero_telephone,
       montant: dto.montant_transaction,
       references,
       description,
+      idcompte: dto.idcompte,
+      idclient: effectiveClientId,
     });
 
     return this.dataSource.transaction(async (manager) => {
       const compte = await manager.findOne(Compte, {
         where: { idcompte: dto.idcompte },
+        lock: { mode: 'pessimistic_write' },
       });
 
       if (!compte || compte.idclient !== effectiveClientId) {
@@ -219,7 +234,7 @@ export class TransactionsService {
       await manager.save(notification);
 
       return {
-        message: 'Collecte enregistree',
+        message: 'Paiement valide. Votre versement a ete enregistre.',
         transaction: savedTransaction,
         payment,
       };
@@ -492,6 +507,22 @@ export class TransactionsService {
     return `/uploads/preouverture/${file.filename}`;
   }
 
+  private async collectWithConfiguredGateway(payload: {
+    operateur: 'om' | 'momo';
+    numeroTelephone: string;
+    montant: number;
+    references: string;
+    description: string;
+    idcompte: number;
+    idclient: number;
+  }) {
+    if (this.getConfiguredPaymentGateway() === 'maviance') {
+      return this.collectWithMaviance(payload);
+    }
+
+    return this.collectWithPaynote(payload);
+  }
+
   private async collectWithPaynote(payload: {
     operateur: 'om' | 'momo';
     numeroTelephone: string;
@@ -607,6 +638,93 @@ export class TransactionsService {
     }
   }
 
+  private async collectWithMaviance(payload: {
+    operateur: 'om' | 'momo';
+    numeroTelephone: string;
+    montant: number;
+    references: string;
+    description: string;
+    idcompte: number;
+    idclient: number;
+  }) {
+    const config = await this.findActiveOperatorConfig(payload.operateur);
+    const payItemId = this.resolveMaviancePayItemId(payload.operateur, config);
+
+    if (!payItemId) {
+      throw new BadRequestException(
+        `Configuration Maviance incomplete pour ${payload.operateur.toUpperCase()}: payItemId manquant.`,
+      );
+    }
+
+    const client = await this.clientRepository.findOneBy({
+      idclient: payload.idclient,
+    });
+    const customerName = [client?.prenom, client?.nom]
+      .filter(Boolean)
+      .join(' ')
+      .trim();
+
+    try {
+      const quote = await this.mavianceClient.request<any>('POST', '/quotestd', {
+        payItemId,
+        amount: payload.montant,
+      });
+      const quoteId = this.extractStringField(quote, ['quoteId', 'quoteid']);
+
+      if (!quoteId) {
+        throw new BadGatewayException('Maviance n a pas retourne de quoteId.');
+      }
+
+      const collectPayload: Record<string, any> = {
+        quoteId,
+        customerPhonenumber: this.normalizeCameroonPhone(
+          payload.numeroTelephone,
+        ),
+        customerEmailaddress:
+          client?.email?.trim() || 'client@sbs.local',
+        customerName: customerName || 'Client SBS',
+        customerAddress: client?.adresse?.trim() || 'Non renseignee',
+        serviceNumber: this.normalizeCameroonPhone(payload.numeroTelephone),
+        trid: payload.references,
+      };
+
+      const collect = await this.mavianceClient.request<any>(
+        'POST',
+        '/collectstd',
+        collectPayload,
+      );
+      const immediateDecision = this.getMaviancePaymentDecision(collect);
+
+      if (immediateDecision.decision === 'success') {
+        return { gateway: 'maviance', quote, collect };
+      }
+      if (immediateDecision.decision === 'failed') {
+        throw new BadGatewayException(immediateDecision.message);
+      }
+
+      const confirmed = await this.pollMaviancePaymentStatus(async () =>
+        this.mavianceClient.request<any>('GET', '/verifytx', {
+          trid: payload.references,
+        }),
+      );
+      const finalDecision = this.getMaviancePaymentDecision(confirmed.payload);
+
+      if (finalDecision.decision === 'success') {
+        return {
+          gateway: 'maviance',
+          quote,
+          collect,
+          status: confirmed.payload,
+        };
+      }
+
+      throw new BadGatewayException(finalDecision.message);
+    } catch (error) {
+      const message = this.toReadableMavianceError(error);
+      throw new BadGatewayException(message);
+    }
+  }
+
   private async normalizeOperator(value: string): Promise<'om' | 'momo'> {
     const normalized = String(value || '')
       .trim()
@@ -708,20 +826,7 @@ export class TransactionsService {
   }
 
   private async findActiveOperatorLedger(code: string) {
-    const rows = await this.settingRepository.find({
-      order: { idsetting: 'DESC' },
-      take: 1,
-    });
-    const latest = rows[0];
-    const rawList = Array.isArray(latest?.operator_actif)
-      ? latest.operator_actif
-      : [];
-    const normalizedCode = this.normalizeOperatorCode(code);
-    const row = rawList.find(
-      (item) =>
-        this.normalizeOperatorCode(String(item?.operateur || '')) ===
-        normalizedCode,
-    );
+    const row = await this.findActiveOperatorConfig(code);
     if (!row) return null;
 
     const idcompte = row.idcompte ? Number(row.idcompte) : undefined;
@@ -739,6 +844,24 @@ export class TransactionsService {
           ? Number(row.idcompte_debit)
           : idcompte,
     };
+  }
+
+  private async findActiveOperatorConfig(code: string): Promise<any | null> {
+    const rows = await this.settingRepository.find({
+      order: { idsetting: 'DESC' },
+      take: 1,
+    });
+    const latest = rows[0];
+    const rawList = Array.isArray(latest?.operator_actif)
+      ? latest.operator_actif
+      : [];
+    const normalizedCode = this.normalizeOperatorCode(code);
+    const row = rawList.find(
+      (item) =>
+        this.normalizeOperatorCode(String(item?.operateur || '')) ===
+        normalizedCode,
+    );
+    return row || null;
   }
 
   private getPaymentDecision(payment: unknown): PaymentDecision {
@@ -938,6 +1061,178 @@ export class TransactionsService {
       body.includes('pay request accepted') || body.includes('accepted');
 
     return codeAccepted || bodyAccepted;
+  }
+
+  private getMaviancePaymentDecision(
+    payload: unknown,
+  ): { decision: PaymentDecision; message: string } {
+    const items = this.extractStatusKeyValues(payload);
+    const valueByKey = (keys: string[]) => {
+      for (const key of keys) {
+        const found = items.find((item) => item.key === key)?.value;
+        if (found) return found;
+      }
+      return '';
+    };
+
+    const status = valueByKey([
+      'status',
+      'txstatus',
+      'transactionstatus',
+      'state',
+    ]);
+    const code = valueByKey(['errorcode', 'code', 'statuscode']);
+    const message = valueByKey(['errormessage', 'message', 'reason']);
+    const combined = `${status} ${code} ${message}`.toLowerCase();
+
+    if (
+      combined.includes('success') ||
+      combined.includes('successful') ||
+      combined.includes('completed') ||
+      combined.includes('paid')
+    ) {
+      return {
+        decision: 'success',
+        message: 'Paiement valide.',
+      };
+    }
+
+    if (
+      combined.includes('insufficient') ||
+      combined.includes('insuffisant') ||
+      code === '703108'
+    ) {
+      return {
+        decision: 'failed',
+        message: 'Solde payeur insuffisant pour effectuer le paiement.',
+      };
+    }
+
+    if (
+      combined.includes('cancel') ||
+      combined.includes('annul') ||
+      combined.includes('refus') ||
+      combined.includes('declined') ||
+      code === '703202'
+    ) {
+      return {
+        decision: 'failed',
+        message: 'Operation annulee ou refusee par le payeur.',
+      };
+    }
+
+    if (
+      combined.includes('timeout') ||
+      combined.includes('expired') ||
+      combined.includes('not confirm') ||
+      code === '703201'
+    ) {
+      return {
+        decision: 'failed',
+        message: 'Le payeur n a pas confirme le paiement a temps.',
+      };
+    }
+
+    if (
+      combined.includes('fail') ||
+      combined.includes('error') ||
+      combined.includes('reject') ||
+      (code && !['200', '201', '0'].includes(code))
+    ) {
+      return {
+        decision: 'failed',
+        message: MavianceErrorMapper.mapCode(
+          code,
+          message || 'Echec du paiement Maviance.',
+        ),
+      };
+    }
+
+    return {
+      decision: 'pending',
+      message:
+        'Paiement non confirme. Verifiez la validation sur le telephone payeur.',
+    };
+  }
+
+  private async pollMaviancePaymentStatus(
+    fetchStatus: () => Promise<unknown>,
+  ): Promise<{ decision: PaymentDecision; payload: unknown }> {
+    const attempts = Math.max(
+      1,
+      Number(process.env.MAVIANCE_STATUS_POLL_ATTEMPTS ?? 20),
+    );
+    const delayMs = Math.max(
+      250,
+      Number(process.env.MAVIANCE_STATUS_POLL_DELAY_MS ?? 3000),
+    );
+
+    let lastPayload: unknown = null;
+    let lastDecision: PaymentDecision = 'unknown';
+
+    for (let i = 0; i < attempts; i++) {
+      lastPayload = await fetchStatus();
+      lastDecision = this.getMaviancePaymentDecision(lastPayload).decision;
+
+      if (lastDecision === 'success' || lastDecision === 'failed') {
+        return { decision: lastDecision, payload: lastPayload };
+      }
+
+      if (i < attempts - 1) {
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+      }
+    }
+
+    return { decision: lastDecision, payload: lastPayload };
+  }
+
+  private toReadableMavianceError(error: unknown): string {
+    const response =
+      error && typeof error === 'object' && 'getResponse' in error
+        ? (error as { getResponse: () => unknown }).getResponse()
+        : error;
+    const items = this.extractStatusKeyValues(response);
+    const code =
+      items.find((item) => ['errorcode', 'code', 'statuscode'].includes(item.key))
+        ?.value || '';
+    const message =
+      items.find((item) => ['errormessage', 'message', 'reason'].includes(item.key))
+        ?.value || '';
+    const combined = `${code} ${message}`.toLowerCase();
+
+    if (combined.includes('insufficient') || code === '703108') {
+      return 'Solde payeur insuffisant pour effectuer le paiement.';
+    }
+    if (
+      combined.includes('cancel') ||
+      combined.includes('annul') ||
+      combined.includes('refus') ||
+      combined.includes('declined') ||
+      code === '703202'
+    ) {
+      return 'Operation annulee ou refusee par le payeur.';
+    }
+    if (
+      combined.includes('timeout') ||
+      combined.includes('expired') ||
+      code === '703201'
+    ) {
+      return 'Le payeur n a pas confirme le paiement a temps.';
+    }
+
+    return MavianceErrorMapper.mapCode(
+      code,
+      message ||
+        (error instanceof Error
+          ? error.message
+          : 'Paiement Maviance indisponible.'),
+    );
+  }
+
+  private normalizeCameroonPhone(value: string) {
+    const digits = String(value || '').replace(/\D/g, '');
+    if (digits.startsWith('237')) return digits;
+    return `237${digits}`;
   }
 
   private async pollPaymentStatus(

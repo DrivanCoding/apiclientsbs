@@ -24,6 +24,7 @@ import { MavianceVerificationService } from './maviance-verification.service';
     MavianceVerificationService,
   ],
   exports: [
+    MavianceClient,
     MaviancePaymentService,
     MavianceVerificationService,
   ],
