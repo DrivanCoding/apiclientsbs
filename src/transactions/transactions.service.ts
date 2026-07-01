@@ -1193,17 +1193,18 @@ export class TransactionsService {
         : error;
     const items = this.extractStatusKeyValues(response);
     const code =
-      items.find((item) =>
-        ['errorcode', 'code', 'statuscode', 'respcode'].includes(item.key),
-      )
-        ?.value || '';
+      items.find((item) => item.key === 'respcode')?.value ||
+      items.find((item) => item.key === 'errorcode')?.value ||
+      items.find((item) => item.key === 'statuscode')?.value ||
+      items.find((item) => item.key === 'code')?.value ||
+      '';
     const message =
-      items.find((item) =>
-        ['errormessage', 'message', 'reason', 'usrmsg', 'devmsg'].includes(
-          item.key,
-        ),
-      )
-        ?.value || '';
+      items.find((item) => item.key === 'usrmsg')?.value ||
+      items.find((item) => item.key === 'devmsg')?.value ||
+      items.find((item) => item.key === 'errormessage')?.value ||
+      items.find((item) => item.key === 'reason')?.value ||
+      items.find((item) => item.key === 'message')?.value ||
+      '';
     const combined = `${code} ${message}`.toLowerCase();
 
     if (code === '4009' || combined.includes('access token invalid')) {

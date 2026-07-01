@@ -108,9 +108,9 @@ export class MavianceClient {
       if (!response.ok) {
         // Maviance API errors typically contain a 'code' and 'message' in JSON
         const errorCode =
-          responseData?.respCode ||
-          responseData?.code ||
-          responseData?.errorCode ||
+          responseData?.respCode ??
+          responseData?.code ??
+          responseData?.errorCode ??
           response.status;
         const errorMessage =
           responseData?.usrMsg ||
