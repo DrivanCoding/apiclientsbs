@@ -10,6 +10,6 @@ const candidates = [
 
 for (const envPath of candidates) {
   if (fs.existsSync(envPath)) {
-    dotenv.config({ path: envPath, override: false });
+    dotenv.config({ path: envPath, override: true });
   }
 }

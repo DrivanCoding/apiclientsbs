@@ -130,7 +130,7 @@ export class TransactionsService {
         config && config['gateway']
           ? String(config['gateway']).trim().toLowerCase()
           : 'paynote';
-      const gateway = forcedGateway ?? storedGateway;
+      const gateway = forcedGateway || storedGateway;
       const payItemId = this.resolveMaviancePayItemId(code, config);
       return {
         code,
@@ -765,18 +765,18 @@ export class TransactionsService {
       .replace(/[^a-z0-9_-]/g, '');
   }
 
-  private getConfiguredPaymentGateway(): 'paynote' | 'maviance' | null {
+  private getConfiguredPaymentGateway(): 'paynote' | 'maviance' {
     const value = String(process.env.MYAPIOPERATOR || '')
       .trim()
       .toLowerCase();
 
-    if (!value) return null;
+    if (!value) return 'maviance';
     if (value === 'paynote' || value === 'maviance') return value;
 
     this.logger.warn(
-      `MYAPIOPERATOR invalide (${value}). Valeurs acceptees: paynote, maviance.`,
+      `MYAPIOPERATOR invalide (${value}). Valeurs acceptees: paynote, maviance. Fallback: maviance.`,
     );
-    return null;
+    return 'maviance';
   }
 
   private resolveMaviancePayItemId(code: string, config?: any): string | null {
