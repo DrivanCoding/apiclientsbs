@@ -20,6 +20,15 @@ export class MavianceVerificationService implements OnModuleInit, OnModuleDestro
   ) {}
 
   onModuleInit() {
+    const enabled =
+      String(process.env.MAVIANCE_BACKGROUND_VERIFY_ENABLED || 'false')
+        .trim()
+        .toLowerCase() === 'true';
+    if (!enabled) {
+      this.logger.log('Maviance background verification service disabled.');
+      return;
+    }
+
     this.isRunning = true;
     this.logger.log('Maviance background verification service initialized.');
     this.startPollingLoop();

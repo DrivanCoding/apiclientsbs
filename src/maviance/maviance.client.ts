@@ -117,7 +117,13 @@ export class MavianceClient {
       if (error instanceof BadGatewayException) {
         throw error;
       }
-      throw new BadGatewayException(`Échec de la connexion à Maviance: ${error.message || error}`);
+      const cause = error?.cause;
+      const details = [error?.message, cause?.code, cause?.message]
+        .filter(Boolean)
+        .join(' - ');
+      throw new BadGatewayException(
+        `Echec de la connexion a Maviance (${baseUrl}): ${details || error}`,
+      );
     }
   }
 }
