@@ -1,8 +1,15 @@
-import { Injectable, BadGatewayException, GatewayTimeoutException } from '@nestjs/common';
+import {
+  Injectable,
+  BadGatewayException,
+  GatewayTimeoutException,
+  Logger,
+} from '@nestjs/common';
 import { MavianceAuthService } from './maviance-auth.service';
 
 @Injectable()
 export class MavianceClient {
+  private readonly logger = new Logger(MavianceClient.name);
+
   constructor(private readonly authService: MavianceAuthService) {}
 
   private getBaseUrl(): string {
@@ -118,6 +125,22 @@ export class MavianceClient {
           responseData?.errorMessage ||
           responseData?.devMsg ||
           `Erreur HTTP ${response.status}`;
+
+        this.logger.error(
+          `Maviance HTTP error: ${JSON.stringify({
+            method,
+            url: requestUrl,
+            httpStatus: response.status,
+            code: errorCode,
+            message: errorMessage,
+            devMsg: responseData?.devMsg,
+            usrMsg: responseData?.usrMsg,
+            respCode: responseData?.respCode,
+            raw: responseData,
+            params: this.maskLogParams(params),
+          })}`,
+        );
+
         throw new BadGatewayException({
           message: `Maviance API Error: ${errorMessage}`,
           code: errorCode,
@@ -138,9 +161,37 @@ export class MavianceClient {
       const details = [error?.message, cause?.code, cause?.message]
         .filter(Boolean)
         .join(' - ');
+      this.logger.error(
+        `Maviance connection error: ${JSON.stringify({
+          method,
+          url: requestUrl,
+          details: details || String(error),
+          causeCode: cause?.code,
+          causeMessage: cause?.message,
+          params: this.maskLogParams(params),
+        })}`,
+      );
       throw new BadGatewayException(
         `Echec de la connexion a Maviance (${baseUrl}): ${details || error}`,
       );
     }
+  }
+
+  private maskLogParams(params: Record<string, any>) {
+    const masked = { ...params };
+    for (const key of Object.keys(masked)) {
+      const normalizedKey = key.toLowerCase();
+      if (
+        normalizedKey.includes('phone') ||
+        normalizedKey.includes('email') ||
+        normalizedKey.includes('name') ||
+        normalizedKey.includes('address') ||
+        normalizedKey.includes('customer') ||
+        normalizedKey.includes('service')
+      ) {
+        masked[key] = '*****';
+      }
+    }
+    return masked;
   }
 }
