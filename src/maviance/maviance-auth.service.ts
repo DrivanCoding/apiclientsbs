@@ -26,10 +26,12 @@ export class MavianceAuthService {
     // 1. Prepare and merge all parameters for signature calculation
     const signParams: Record<string, string> = {};
 
-    // Add request parameters (query or body) converted to string
+    // Add request parameters (query or body) converted to string.
+    // The official Postman collection trims string values before signing.
     for (const [key, value] of Object.entries(requestParams)) {
       if (value !== undefined && value !== null) {
-        signParams[key] = String(value);
+        signParams[key] =
+          typeof value === 'string' ? value.trim() : String(value);
       }
     }
 
@@ -42,20 +44,18 @@ export class MavianceAuthService {
     // 2. Sort keys alphabetically
     const sortedKeys = Object.keys(signParams).sort();
 
-    // 3. Construct the parameter string with RFC 3986 encoding
-    const paramPairs = sortedKeys.map((key) => {
-      const encodedKey = this.rfc3986Encode(key);
-      const encodedVal = this.rfc3986Encode(signParams[key]);
-      return `${encodedKey}=${encodedVal}`;
-    });
+    // 3. Construct the raw parameter string exactly like the Postman script:
+    // sorted key=value pairs joined with &, then encode the whole string once.
+    const paramPairs = sortedKeys.map((key) => `${key}=${signParams[key]}`);
     const paramString = paramPairs.join('&');
 
     // 4. Construct the Signature Base String
-    // Format: UPPERCASE_METHOD & ENCODED_URL & ENCODED_PARAM_STRING
+    // Format from the Maviance Postman collection:
+    // METHOD & encodeURIComponent(URL) & encodeURIComponent(PARAMETER_STRING)
     const baseString = [
       method.toUpperCase(),
-      this.rfc3986Encode(url),
-      this.rfc3986Encode(paramString),
+      encodeURIComponent(url),
+      encodeURIComponent(paramString),
     ].join('&');
 
     // 5. Calculate HMAC-SHA1 and encode in Base64

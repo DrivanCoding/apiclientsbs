@@ -2,6 +2,8 @@ export class MavianceErrorMapper {
   private static readonly ERROR_MAP: Record<string, string> = {
     '4009':
       'Identifiants Maviance invalides pour cet environnement. Verifiez le token, le secret et l URL S3P.',
+    '4006':
+      'Signature Maviance invalide. Verifiez le secret, les parametres signes et l horloge du serveur.',
     '42001': 'Numero de service ou facture introuvable.',
     '702103': 'Le montant de la transaction depasse le seuil autorise.',
     '703108': 'Solde insuffisant pour effectuer le paiement.',

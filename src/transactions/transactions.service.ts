@@ -1210,6 +1210,12 @@ export class TransactionsService {
     if (code === '4009' || combined.includes('access token invalid')) {
       return 'Identifiants Maviance invalides pour cet environnement. Verifiez le token, le secret et l URL S3P.';
     }
+    if (
+      code === '4006' ||
+      combined.includes('signature does not pass server validation')
+    ) {
+      return 'Signature Maviance invalide. Verifiez le secret, les parametres signes et l horloge du serveur.';
+    }
 
     if (combined.includes('insufficient') || code === '703108') {
       return 'Solde payeur insuffisant pour effectuer le paiement.';
