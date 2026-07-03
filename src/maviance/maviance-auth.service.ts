@@ -19,8 +19,8 @@ export class MavianceAuthService {
     token: string,
     secret: string,
   ): string {
-    const now = Date.now().toString();
-    const nonce = now;
+    const now = Math.floor(Date.now() / 1000).toString();
+    const nonce = Date.now().toString();
     const timestamp = now;
 
     // 1. Prepare and merge all parameters for signature calculation

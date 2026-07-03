@@ -33,6 +33,7 @@ export class MaviancePaymentService {
 
     // Check cache
     const newestCache = await this.cacheRepository.findOne({
+      where: {},
       order: { updatedAt: 'DESC' },
     });
 
@@ -311,7 +312,7 @@ export class MaviancePaymentService {
     const coreTx = manager.create(CoreTransaction, {
       iduser: transaction.iduser || SYSTEM_USER_ID,
       idcompte: compte.idcompte,
-      montant_transaction: transaction.amount.toFixed(2),
+      montant_transaction: Number(transaction.amount).toFixed(2),
       type_transaction: 'versement',
       operateur: 'maviance',
       statut: 'complete',
@@ -324,7 +325,7 @@ export class MaviancePaymentService {
     const notification = manager.create(ClientNotification, {
       idclient: transaction.idclient || compte.idclient || 0,
       titre: 'Versement réussi (Maviance)',
-      message: `Votre compte ${compte.numero_compte} a été crédité de ${transaction.amount.toFixed(2)} XAF via Smobilpay.`,
+      message: `Votre compte ${compte.numero_compte} a été crédité de ${Number(transaction.amount).toFixed(2)} XAF via Smobilpay.`,
       type: 'versement',
       lu: 0,
     });

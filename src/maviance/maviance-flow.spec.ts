@@ -78,7 +78,7 @@ describe('Maviance Integration Flow', () => {
 
   it('1. should succeed with quote request (quote OK)', async () => {
     const dto = {
-      payItemId: 10023,
+      payItemId: '10023',
       amount: 1500,
       idcompte: 4,
     };
