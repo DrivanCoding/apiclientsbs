@@ -27,7 +27,6 @@ export class MavianceAuthService {
     const signParams: Record<string, string> = {};
 
     // Add request parameters (query or body) converted to string.
-    // The official Postman collection trims string values before signing.
     for (const [key, value] of Object.entries(requestParams)) {
       if (value !== undefined && value !== null) {
         signParams[key] =

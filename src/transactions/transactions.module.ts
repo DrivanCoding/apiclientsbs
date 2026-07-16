@@ -11,6 +11,7 @@ import { Typecompte } from '../entities/typecompte.entity';
 import { ListeOperator } from '../entities/liste-operator.entity';
 import { PaynoteModule } from '../paynote/paynote.module';
 import { MavianceModule } from '../maviance/maviance.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 import { TransactionsController } from './transactions.controller';
 import { TransactionsService } from './transactions.service';
 
@@ -29,6 +30,7 @@ import { TransactionsService } from './transactions.service';
     ]),
     PaynoteModule,
     MavianceModule,
+    NotificationsModule,
   ],
   controllers: [TransactionsController],
   providers: [TransactionsService],

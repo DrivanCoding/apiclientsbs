@@ -13,6 +13,8 @@ import {
   UseGuards,
   UseInterceptors,
   Query,
+  Headers,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { FileFieldsInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
@@ -24,6 +26,7 @@ import { TransactionsService } from './transactions.service';
 import { DepositDto } from './dto/deposit.dto';
 import { OuvertureCompteDto } from './dto/ouverture-compte.dto';
 import { PreouvertureDto } from './dto/preouverture.dto';
+import { CollecteSyncNotificationDto } from './dto/collecte-sync-notification.dto';
 
 const preouvertureUploadDir = join(process.cwd(), 'uploads', 'preouverture');
 
@@ -66,6 +69,23 @@ export class TransactionsController {
   ) {
     const idclient = Number(req.user?.idclient || 0);
     return this.service.deposit(dto, idclient);
+  }
+
+  @Post('core-sync/collecte-notification')
+  syncCollecteNotification(
+    @Body() dto: CollecteSyncNotificationDto,
+    @Headers('x-server-sync-token') syncToken?: string,
+  ) {
+    const expectedToken = (
+      process.env.CORE_SYNC_TOKEN ||
+      process.env.SBSCLIENT_CORE_SYNC_TOKEN ||
+      ''
+    ).trim();
+    if (!expectedToken || syncToken !== expectedToken) {
+      throw new UnauthorizedException('Token de synchronisation core invalide');
+    }
+
+    return this.service.syncCollecteNotification(dto);
   }
 
   @Get('openable-typecomptes')

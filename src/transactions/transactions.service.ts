@@ -25,9 +25,11 @@ import { Typecompte } from '../entities/typecompte.entity';
 import { MavianceClient } from '../maviance/maviance.client';
 import { MavianceErrorMapper } from '../maviance/maviance-error.mapper';
 import { PaynoteService } from '../paynote/paynote.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { DepositDto } from './dto/deposit.dto';
 import { OuvertureCompteDto } from './dto/ouverture-compte.dto';
 import { PreouvertureDto } from './dto/preouverture.dto';
+import { CollecteSyncNotificationDto } from './dto/collecte-sync-notification.dto';
 
 const SYSTEM_USER_ID = 1;
 type PaymentDecision = 'success' | 'pending' | 'failed' | 'unknown';
@@ -57,9 +59,12 @@ export class TransactionsService {
     private readonly listeOperatorRepository: Repository<ListeOperator>,
     @InjectRepository(Typecompte)
     private readonly typeCompteRepository: Repository<Typecompte>,
+    @InjectRepository(Notification)
+    private readonly notificationRepository: Repository<Notification>,
     private readonly dataSource: DataSource,
     private readonly paynoteService: PaynoteService,
     private readonly mavianceClient: MavianceClient,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   create(payload: Partial<Transaction>) {
@@ -231,12 +236,85 @@ export class TransactionsService {
         type: 'versement',
         lu: 0,
       });
-      await manager.save(notification);
+      const savedNotification = await manager.save(notification);
+      this.notificationsService.emitCreated(savedNotification);
 
       return {
         message: 'Paiement valide. Votre versement a ete enregistre.',
         transaction: savedTransaction,
         payment,
+      };
+    });
+  }
+
+  async syncCollecteNotification(dto: CollecteSyncNotificationDto) {
+    const reference = dto.references?.trim();
+    return this.dataSource.transaction(async (manager) => {
+      const compte = await manager.findOne(Compte, {
+        where: { idcompte: dto.idcompte },
+        lock: { mode: 'pessimistic_write' },
+      });
+
+      if (!compte) {
+        throw new NotFoundException('Compte core introuvable');
+      }
+
+      const idclient = Number(compte.idclient || 0);
+      if (idclient <= 0) {
+        throw new BadRequestException('Compte sans client rattache');
+      }
+
+      if (reference) {
+        const existingTransaction = await manager.findOne(Transaction, {
+          where: { references: reference },
+        });
+        if (existingTransaction) {
+          return {
+            success: true,
+            transaction: existingTransaction,
+            notification: null,
+            duplicate: true,
+          };
+        }
+      }
+
+      const amount = Number(dto.montant_transaction);
+      const transaction = manager.create(Transaction, {
+        iduser: dto.iduser ?? SYSTEM_USER_ID,
+        idcompte: compte.idcompte,
+        montant_transaction: amount.toFixed(2),
+        type_transaction: 'versement',
+        operateur: 'sbscollecte',
+        statut: 'complete',
+        references: reference || `SBSCOL-${Date.now()}`,
+        description: dto.description?.trim() || 'Collecte mobile SBS Collecte',
+        date_transaction: dto.date_transaction
+          ? new Date(dto.date_transaction)
+          : new Date(),
+      });
+      const savedTransaction = await manager.save(transaction);
+
+      compte.solde = (Number(compte.solde || 0) + amount).toFixed(2);
+      await manager.save(compte);
+
+      const notification = manager.create(Notification, {
+        idclient,
+        titre: 'Versement recu',
+        message: this.buildDepositNotificationMessage({
+          amount,
+          numeroCompte: compte.numero_compte,
+        }),
+        type: 'versement',
+        lu: 0,
+      });
+      const savedNotification = await manager.save(notification);
+      this.notificationsService.emitCreated(savedNotification);
+
+      return {
+        success: true,
+        transaction: savedTransaction,
+        notification: savedNotification,
+        duplicate: false,
       };
     });
   }
