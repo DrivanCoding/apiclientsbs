@@ -428,9 +428,9 @@ export class TransactionsService {
     };
   }
 
-  async findByClient(idclient: number) {
+  async findByClient(idclient: number, dateDebut?: string, dateFin?: string) {
     try {
-      return await this.repository
+      const query = this.repository
         .createQueryBuilder('transaction')
         .innerJoin(Compte, 'compte', 'compte.idcompte = transaction.idcompte')
         .innerJoin(
@@ -440,7 +440,20 @@ export class TransactionsService {
         )
         .where('compte.idclient = :idclient', { idclient })
         .andWhere('typecompte.mobile_sync_enabled = 1')
-        .andWhere('typecompte.mobile_can_view = 1')
+        .andWhere('typecompte.mobile_can_view = 1');
+
+      if (dateDebut) {
+        query.andWhere('DATE(transaction.date_transaction) >= :dateDebut', {
+          dateDebut,
+        });
+      }
+      if (dateFin) {
+        query.andWhere('DATE(transaction.date_transaction) <= :dateFin', {
+          dateFin,
+        });
+      }
+
+      return await query
         .orderBy('transaction.date_transaction', 'DESC')
         .getMany();
     } catch (error) {
@@ -449,6 +462,17 @@ export class TransactionsService {
       }
 
       // Backward compatibility when migration for transaction.operateur is not applied.
+      const filters: string[] = [];
+      const params: Array<number | string> = [idclient];
+      if (dateDebut) {
+        filters.push('AND DATE(t.date_transaction) >= ?');
+        params.push(dateDebut);
+      }
+      if (dateFin) {
+        filters.push('AND DATE(t.date_transaction) <= ?');
+        params.push(dateFin);
+      }
+
       const rows = await this.dataSource.query(
         `
         SELECT
@@ -468,9 +492,10 @@ export class TransactionsService {
         WHERE c.idclient = ?
           AND tc.mobile_sync_enabled = 1
           AND tc.mobile_can_view = 1
+          ${filters.join('\n          ')}
         ORDER BY t.date_transaction DESC
         `,
-        [idclient],
+        params,
       );
 
       return Array.isArray(rows)
@@ -743,10 +768,14 @@ export class TransactionsService {
       .trim();
 
     try {
-      const quote = await this.mavianceClient.request<any>('POST', '/quotestd', {
-        payItemId,
-        amount: payload.montant,
-      });
+      const quote = await this.mavianceClient.request<any>(
+        'POST',
+        '/quotestd',
+        {
+          payItemId,
+          amount: payload.montant,
+        },
+      );
       const quoteId = this.extractStringField(quote, ['quoteId', 'quoteid']);
 
       if (!quoteId) {
@@ -758,8 +787,7 @@ export class TransactionsService {
         customerPhonenumber: this.normalizeCameroonPhone(
           payload.numeroTelephone,
         ),
-        customerEmailaddress:
-          client?.email?.trim() || 'client@sbs.local',
+        customerEmailaddress: client?.email?.trim() || 'client@sbs.local',
         customerName: customerName || 'Client SBS',
         customerAddress: client?.adresse?.trim() || 'Non renseignee',
         serviceNumber: this.normalizeCameroonPhone(payload.numeroTelephone),
@@ -859,7 +887,9 @@ export class TransactionsService {
 
   private resolveMaviancePayItemId(code: string, config?: any): string | null {
     const storedPayItemId =
-      config && config['payItemId'] !== undefined && config['payItemId'] !== null
+      config &&
+      config['payItemId'] !== undefined &&
+      config['payItemId'] !== null
         ? String(config['payItemId']).trim()
         : null;
 
@@ -1141,9 +1171,10 @@ export class TransactionsService {
     return codeAccepted || bodyAccepted;
   }
 
-  private getMaviancePaymentDecision(
-    payload: unknown,
-  ): { decision: PaymentDecision; message: string } {
+  private getMaviancePaymentDecision(payload: unknown): {
+    decision: PaymentDecision;
+    message: string;
+  } {
     const items = this.extractStatusKeyValues(payload);
     const valueByKey = (keys: string[]) => {
       for (const key of keys) {

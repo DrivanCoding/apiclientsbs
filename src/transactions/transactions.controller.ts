@@ -150,18 +150,19 @@ export class TransactionsController {
   }
 
   @Get()
-  findAll(
-    @Query('page') page?: string,
-    @Query('limit') limit?: string,
-  ) {
+  findAll(@Query('page') page?: string, @Query('limit') limit?: string) {
     const pageNum = page ? parseInt(page, 10) : undefined;
     const limitNum = limit ? parseInt(limit, 10) : undefined;
     return this.service.findAll(pageNum, limitNum);
   }
 
   @Get('client/:id')
-  findByClient(@Param('id', ParseIntPipe) id: number) {
-    return this.service.findByClient(id);
+  findByClient(
+    @Param('id', ParseIntPipe) id: number,
+    @Query('date_debut') dateDebut?: string,
+    @Query('date_fin') dateFin?: string,
+  ) {
+    return this.service.findByClient(id, dateDebut, dateFin);
   }
 
   @Get(':id')
