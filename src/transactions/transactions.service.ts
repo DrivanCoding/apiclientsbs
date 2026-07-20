@@ -31,7 +31,6 @@ import { OuvertureCompteDto } from './dto/ouverture-compte.dto';
 import { PreouvertureDto } from './dto/preouverture.dto';
 import { CollecteSyncNotificationDto } from './dto/collecte-sync-notification.dto';
 
-const SYSTEM_USER_ID = 1;
 type PaymentDecision = 'success' | 'pending' | 'failed' | 'unknown';
 type UploadedPreouvertureFiles = Record<
   string,
@@ -210,7 +209,7 @@ export class TransactionsService {
       const newSolde = currentSolde + dto.montant_transaction;
 
       const transaction = manager.create(Transaction, {
-        iduser: dto.iduser ?? SYSTEM_USER_ID,
+        iduser: dto.iduser,
         idcompte: compte.idcompte,
         montant_transaction: dto.montant_transaction.toFixed(2),
         type_transaction: 'versement',
@@ -280,7 +279,7 @@ export class TransactionsService {
 
       const amount = Number(dto.montant_transaction);
       const transaction = manager.create(Transaction, {
-        iduser: dto.iduser ?? SYSTEM_USER_ID,
+        iduser: dto.iduser,
         idcompte: compte.idcompte,
         montant_transaction: amount.toFixed(2),
         type_transaction: 'versement',

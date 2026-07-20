@@ -152,7 +152,7 @@ export class CreateSbsClientSchema1780315200000 implements MigrationInterface {
     await queryRunner.query(`
       CREATE TABLE IF NOT EXISTS \`transaction\` (
         \`idtransaction\` int NOT NULL AUTO_INCREMENT,
-        \`iduser\` int NOT NULL,
+        \`iduser\` int DEFAULT NULL,
         \`idcompte\` int NOT NULL,
         \`montant_transaction\` decimal(15,2) NOT NULL,
         \`date_transaction\` datetime DEFAULT CURRENT_TIMESTAMP,
@@ -280,12 +280,6 @@ export class CreateSbsClientSchema1780315200000 implements MigrationInterface {
       'transaction',
       'FK_TRANSACTION_COMPTE',
       'ADD CONSTRAINT `FK_TRANSACTION_COMPTE` FOREIGN KEY (`idcompte`) REFERENCES `compte` (`idcompte`)',
-    );
-    await this.addConstraintIfMissing(
-      queryRunner,
-      'transaction',
-      'FK_TRANSACTION_USER',
-      'ADD CONSTRAINT `FK_TRANSACTION_USER` FOREIGN KEY (`iduser`) REFERENCES `user` (`iduser`)',
     );
     await this.addConstraintIfMissing(
       queryRunner,

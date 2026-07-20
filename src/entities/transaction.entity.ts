@@ -5,8 +5,8 @@ export class Transaction {
  @PrimaryGeneratedColumn()
  idtransaction: number;
 
- @Column()
- iduser: number;
+ @Column({ nullable: true })
+ iduser?: number;
 
  @Column()
  idcompte: number;

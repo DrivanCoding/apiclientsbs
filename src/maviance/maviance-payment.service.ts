@@ -11,8 +11,6 @@ import { QuoteRequestDto } from './dto/quote-request.dto';
 import { CollectRequestDto } from './dto/collect-request.dto';
 import { MavianceErrorMapper } from './maviance-error.mapper';
 
-const SYSTEM_USER_ID = 1;
-
 @Injectable()
 export class MaviancePaymentService {
   constructor(
@@ -103,7 +101,7 @@ export class MaviancePaymentService {
         status: 'QUOTED',
         idcompte,
         idclient,
-        iduser: iduser || SYSTEM_USER_ID,
+        iduser,
         rawRequest: maskedRequest,
         rawResponse: maskedResponse,
       });
@@ -141,7 +139,7 @@ export class MaviancePaymentService {
       transaction.status = 'PENDING';
       transaction.idcompte = dto.idcompte;
       transaction.idclient = clientId;
-      transaction.iduser = userId || SYSTEM_USER_ID;
+      transaction.iduser = userId;
     } else {
       // Create new transaction if quote was not recorded locally
       transaction = this.txRepository.create({
@@ -158,7 +156,7 @@ export class MaviancePaymentService {
         status: 'PENDING',
         idcompte: dto.idcompte,
         idclient: clientId,
-        iduser: userId || SYSTEM_USER_ID,
+        iduser: userId,
       });
     }
 
@@ -310,7 +308,7 @@ export class MaviancePaymentService {
 
     // Create record in the core transaction ledger
     const coreTx = manager.create(CoreTransaction, {
-      iduser: transaction.iduser || SYSTEM_USER_ID,
+      iduser: transaction.iduser,
       idcompte: compte.idcompte,
       montant_transaction: Number(transaction.amount).toFixed(2),
       type_transaction: 'versement',
