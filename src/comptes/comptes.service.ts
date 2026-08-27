@@ -4,19 +4,21 @@ import {
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
-import { JwtService } from '@nestjs/jwt';
 import { InjectRepository } from '@nestjs/typeorm';
 import { IsNull, Not, Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
 import * as nodemailer from 'nodemailer';
+import PDFDocument = require('pdfkit');
 import { randomInt } from 'crypto';
 import { Client } from '../entities/client.entity';
 import { Compte } from '../entities/compte.entity';
 import { ComptePinOtp } from '../entities/compte-pin-otp.entity';
+import { Transaction } from '../entities/transaction.entity';
 import { Typecompte } from '../entities/typecompte.entity';
 import { ConfirmPinSetupDto } from './dto/confirm-pin-setup.dto';
 import { RequestPinOtpDto } from './dto/request-pin-otp.dto';
 import { VerifyComptePinDto } from './dto/verify-compte-pin.dto';
+import { SmsService } from '../sms/sms.service';
 
 @Injectable()
 export class ComptesService {
@@ -29,9 +31,11 @@ export class ComptesService {
     private readonly clientRepository: Repository<Client>,
     @InjectRepository(ComptePinOtp)
     private readonly otpRepository: Repository<ComptePinOtp>,
+    @InjectRepository(Transaction)
+    private readonly transactionRepository: Repository<Transaction>,
     @InjectRepository(Typecompte)
     private readonly typeCompteRepository: Repository<Typecompte>,
-    private readonly jwtService: JwtService,
+    private readonly smsService: SmsService,
   ) {}
 
   private async getClientMasterPin(idclient: number): Promise<string | null> {
@@ -101,7 +105,12 @@ export class ComptesService {
         return this.isMobileAllowed(typeCompte);
       })
       .map((compte) =>
-        this.toCompteResponse(compte, true, typesById.get(compte.idtype), hasPin),
+        this.toCompteResponse(
+          compte,
+          true,
+          typesById.get(compte.idtype),
+          hasPin,
+        ),
       );
   }
 
@@ -144,7 +153,7 @@ export class ComptesService {
 
     if (masterPin === 'LOCKED') {
       throw new UnauthorizedException(
-        'Code PIN deactive suite a plusieurs tentatives incorrectes. Veuillez contacter votre agence.'
+        'Code PIN deactive suite a plusieurs tentatives incorrectes. Veuillez contacter votre agence.',
       );
     }
 
@@ -161,12 +170,12 @@ export class ComptesService {
             });
           }
           throw new UnauthorizedException(
-            'Code PIN deactive suite a 5 tentatives incorrectes. Veuillez contacter votre agence.'
+            'Code PIN deactive suite a 5 tentatives incorrectes. Veuillez contacter votre agence.',
           );
         } else {
           this.pinAttemptsMap.set(compte.idclient, attempts);
           throw new UnauthorizedException(
-            `Code PIN incorrect. Tentative ${attempts}/5.`
+            `Code PIN incorrect. Tentative ${attempts}/5.`,
           );
         }
       }
@@ -194,7 +203,9 @@ export class ComptesService {
     const masterPin = await this.getClientMasterPin(payload.idclient);
     if (masterPin) {
       if (masterPin === 'LOCKED') {
-        throw new BadRequestException('Ce code PIN est deactive. Veuillez contacter votre agence.');
+        throw new BadRequestException(
+          'Ce code PIN est deactive. Veuillez contacter votre agence.',
+        );
       }
       throw new BadRequestException('Le code PIN est deja configure');
     }
@@ -222,7 +233,7 @@ export class ComptesService {
       if (diffMs < cooldownMs) {
         const remainingSeconds = Math.ceil((cooldownMs - diffMs) / 1000);
         throw new BadRequestException(
-          `Veuillez patienter ${remainingSeconds} secondes avant de demander un nouveau code OTP.`
+          `Veuillez patienter ${remainingSeconds} secondes avant de demander un nouveau code OTP.`,
         );
       }
     }
@@ -238,7 +249,7 @@ export class ComptesService {
     const now = new Date();
     const expiresAt = new Date(now.getTime() + 10 * 60 * 1000);
 
-    await this.otpRepository.save({
+    const otpRecord = await this.otpRepository.save({
       idclient: payload.idclient,
       idcompte: payload.idcompte,
       otp_code_hash: otpHash,
@@ -247,7 +258,18 @@ export class ComptesService {
       consumed_at: null,
     });
 
-    const delivery = await this.deliverPinOtp(client, otpCode, payload.idcompte);
+    let delivery: { channel: string; message: string };
+    try {
+      delivery = await this.deliverPinOtp(
+        client,
+        otpCode,
+        payload.idcompte,
+      );
+    } catch (error) {
+      // Un OTP non transmis ne doit pas imposer le delai de renouvellement.
+      await this.otpRepository.delete(otpRecord.id);
+      throw error;
+    }
 
     return {
       success: true,
@@ -270,7 +292,9 @@ export class ComptesService {
     const masterPin = await this.getClientMasterPin(payload.idclient);
     if (masterPin) {
       if (masterPin === 'LOCKED') {
-        throw new BadRequestException('Ce code PIN est deactive. Veuillez contacter votre agence.');
+        throw new BadRequestException(
+          'Ce code PIN est deactive. Veuillez contacter votre agence.',
+        );
       }
       throw new BadRequestException('Le code PIN est deja configure');
     }
@@ -323,13 +347,17 @@ export class ComptesService {
       consumed_at: now,
     });
 
-    const updated = await this.repository.findOneBy({ idcompte: compte.idcompte });
+    const updated = await this.repository.findOneBy({
+      idcompte: compte.idcompte,
+    });
     const typeCompte = updated
       ? await this.findTypeCompte(updated.idtype)
       : undefined;
     return {
       success: true,
-      compte: updated ? this.toCompteResponse(updated, false, typeCompte, true) : null,
+      compte: updated
+        ? this.toCompteResponse(updated, false, typeCompte, true)
+        : null,
       message: 'Code PIN configure avec succes',
     };
   }
@@ -370,11 +398,15 @@ export class ComptesService {
 
     const hasPin = updated?.idclient
       ? (await this.getClientMasterPin(updated.idclient)) !== null
-      : updated ? Boolean(updated.pin_code) : false;
+      : updated
+        ? Boolean(updated.pin_code)
+        : false;
 
     return {
       ...result,
-      compte: updated ? this.toCompteResponse(updated, true, typeCompte, hasPin) : null,
+      compte: updated
+        ? this.toCompteResponse(updated, true, typeCompte, hasPin)
+        : null,
     };
   }
 
@@ -396,7 +428,8 @@ export class ComptesService {
     const user = process.env.SMTP_USER?.trim();
     const pass = process.env.SMTP_PASS?.trim();
     const from = process.env.SMTP_FROM?.trim() || user || 'no-reply@sbs.local';
-    const secure = (process.env.SMTP_SECURE ?? 'false').toLowerCase() === 'true';
+    const secure =
+      (process.env.SMTP_SECURE ?? 'false').toLowerCase() === 'true';
 
     const subject = 'Votre code OTP de configuration PIN';
     const text = [
@@ -410,7 +443,8 @@ export class ComptesService {
     ].join('\n');
 
     if (!host || !user || !pass) {
-      const isDev = process.env.NODE_ENV === 'development' || !process.env.NODE_ENV;
+      const isDev =
+        process.env.NODE_ENV === 'development' || !process.env.NODE_ENV;
       const loggedOtp = isDev ? otpCode : '******';
       console.warn(
         `[PIN-OTP] SMTP non configure. OTP compte #${idcompte} pour ${to}: ${loggedOtp}`,
@@ -434,15 +468,34 @@ export class ComptesService {
     return 'email';
   }
 
-  private async deliverPinOtp(client: Client, otpCode: string, idcompte: number) {
+  private async deliverPinOtp(
+    client: Client,
+    otpCode: string,
+    idcompte: number,
+  ) {
     const phone = this.normalizePhone(client.telephone_principal);
     const email = client.email?.trim().toLowerCase();
-    const message = `Votre code OTP SBS pour configurer le PIN du compte #${idcompte} est: ${otpCode}. Il expire dans 10 minutes.`;
 
     if (phone) {
-      const delivery = await this.sendPinOtpSms(phone, message, idcompte, otpCode);
+      const template = process.env.SMS_OTP_TEMPLATE?.trim();
+      if (!template) {
+        throw new BadRequestException(
+          'Le modele SMS OTP SBSClient n est pas configure',
+        );
+      }
+      const message = this.renderSmsTemplate(template, {
+        otp: otpCode,
+        compte: String(idcompte),
+        expiration: '10',
+      });
+      const result = await this.smsService.sendSms(phone, message);
+      if (!result.success) {
+        throw new BadRequestException(
+          `Echec envoi OTP via ${this.smsService.provider()}: ${result.error || 'erreur inconnue'}`,
+        );
+      }
       return {
-        channel: delivery,
+        channel: 'sms',
         message: 'Un code OTP a ete envoye par SMS',
       };
     }
@@ -451,61 +504,14 @@ export class ComptesService {
       const delivery = await this.sendPinOtpEmail(email, otpCode, idcompte);
       return {
         channel: delivery,
-        message: 'Aucun numero telephone trouve. Le code OTP a ete envoye par email',
+        message:
+          'Aucun numero telephone trouve. Le code OTP a ete envoye par email',
       };
     }
 
     throw new BadRequestException(
-      "Aucun telephone ni email disponible. Contactez votre agence pour mettre a jour vos informations.",
+      'Aucun telephone ni email disponible. Contactez votre agence pour mettre a jour vos informations.',
     );
-  }
-
-  private async sendPinOtpSms(
-    phone: string,
-    message: string,
-    idcompte: number,
-    otpCode: string,
-  ): Promise<'sms' | 'console_sms'> {
-    const user = process.env.SMS_USER?.trim() || process.env.EBS_SMS_USER?.trim();
-    const password =
-      process.env.SMS_PASSWORD?.trim() || process.env.EBS_SMS_PASSWORD?.trim();
-    const senderID =
-      process.env.SMS_SENDER_ID?.trim() ||
-      process.env.EBS_SMS_SENDER_ID?.trim() ||
-      'SBS';
-    const endpoint =
-      process.env.SMS_API_URL?.trim() ||
-      process.env.EBS_SMS_API_URL?.trim() ||
-      'https://sms.ebs237.online/smsapi/sendSMS';
-
-    if (!user || !password || !senderID) {
-      const isDev = process.env.NODE_ENV === 'development' || !process.env.NODE_ENV;
-      const loggedOtp = isDev ? otpCode : '******';
-      console.warn(
-        `[PIN-OTP-SMS] SMS non configure. OTP compte #${idcompte} pour ${phone}: ${loggedOtp}`,
-      );
-      return 'console_sms';
-    }
-
-    const body = new URLSearchParams({
-      user,
-      password,
-      senderID,
-      phone,
-      message,
-    });
-
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body,
-    });
-    const text = await response.text();
-    if (!response.ok || this.smsLooksFailed(text)) {
-      throw new BadRequestException(`Echec envoi SMS OTP: ${text || response.status}`);
-    }
-
-    return 'sms';
   }
 
   private normalizePhone(value?: string | null) {
@@ -516,38 +522,17 @@ export class ComptesService {
     return digits;
   }
 
-  private smsLooksFailed(raw: string) {
-    const text = raw.trim();
-    if (!text) return true;
-
-    try {
-      const decoded = JSON.parse(text);
-      if (decoded && typeof decoded === 'object') {
-        const status = String(decoded.status ?? decoded.statut ?? '').toLowerCase();
-        const success = String(decoded.success ?? '').toLowerCase();
-        const message = String(decoded.message ?? decoded.error ?? '').toLowerCase();
-
-        if (['error', 'failed', 'ko', '0'].includes(status) || success === 'false') {
-          return true;
-        }
-        if (message.includes('error') || message.includes('erreur') || message.includes('echec')) {
-          return true;
-        }
-        if (['success', 'sent', 'ok', '1', '200'].includes(status) || success === 'true' || decoded.message_id || decoded.sms_id) {
-          return false;
-        }
-      }
-    } catch (e) {
-      // Fallback
-    }
-
-    const lower = text.toLowerCase();
-    return (
-      lower.includes('error') ||
-      lower.includes('erreur') ||
-      lower.includes('failed') ||
-      lower.includes('echec')
-    );
+  private renderSmsTemplate(
+    template: string,
+    values: Record<string, string>,
+  ): string {
+    return Object.entries(values).reduce((message, [key, value]) => {
+      return message
+        .split(`__${key}`)
+        .join(value)
+        .split(`{${key}}`)
+        .join(value);
+    }, template);
   }
 
   private async hashPin(pin?: string | null) {
@@ -598,15 +583,23 @@ export class ComptesService {
     hasPinOverride?: boolean,
   ) {
     const { pin_code: _pin, ...safeCompte } = compte;
-    const hasPin = hasPinOverride !== undefined ? hasPinOverride : Boolean(_pin);
+    const hasPin =
+      hasPinOverride !== undefined ? hasPinOverride : Boolean(_pin);
     return {
       ...safeCompte,
-      solde: includeSensitive ? safeCompte.solde : hasPin ? null : safeCompte.solde,
+      solde: includeSensitive
+        ? safeCompte.solde
+        : hasPin
+          ? null
+          : safeCompte.solde,
       has_pin: hasPin,
       libelle: typeCompte?.libelle ?? null,
       type_compte: typeCompte?.libelle ?? null,
       chapitre_comptable: typeCompte?.numero ?? null,
-      mobile_sync_enabled: this.asEnabled(typeCompte?.mobile_sync_enabled, false),
+      mobile_sync_enabled: this.asEnabled(
+        typeCompte?.mobile_sync_enabled,
+        false,
+      ),
       mobile_can_open: this.asEnabled(typeCompte?.mobile_can_open, false),
       mobile_can_view: this.asEnabled(typeCompte?.mobile_can_view, true),
       mobile_can_deposit: this.asEnabled(typeCompte?.mobile_can_deposit, true),
@@ -624,37 +617,282 @@ export class ComptesService {
       throw new NotFoundException('Compte introuvable pour ce client');
     }
 
-    const payload = {
-      sub: 'sbsclient-service',
-      accountType: 'service',
-      iat: Math.floor(Date.now() / 1000),
-      exp: Math.floor(Date.now() / 1000) + 900,
-    };
-    const token = this.jwtService.sign(payload);
-
-    const phpBaseUrl = process.env.PHP_CORE_URL || 'http://localhost/collectApp';
-    const url = new URL(`${phpBaseUrl}/api/releve-compte/${idcompte}`);
-    if (dateDebut) url.searchParams.append('date_debut', dateDebut);
-    if (dateFin) url.searchParams.append('date_fin', dateFin);
-
-    const response = await fetch(url.toString(), {
-      method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-      },
-    });
-
-    if (!response.ok) {
-      const errText = await response.text();
-      let errMsg = 'Erreur lors de la génération du relevé';
-      try {
-        const errJson = JSON.parse(errText);
-        if (errJson.error) errMsg = errJson.error;
-      } catch (e) {}
-      throw new BadRequestException(errMsg);
+    const start = this.statementDate(dateDebut, false);
+    const end = this.statementDate(dateFin, true);
+    if (start && end && start > end) {
+      throw new BadRequestException(
+        'La date de debut doit preceder la date de fin.',
+      );
     }
 
-    const arrayBuffer = await response.arrayBuffer();
-    return Buffer.from(arrayBuffer);
+    const [client, typeCompte, transactions] = await Promise.all([
+      this.clientRepository.findOneBy({ idclient }),
+      this.findTypeCompte(compte.idtype),
+      this.transactionRepository.find({
+        where: { idcompte, statut: 'complete' },
+        order: { date_transaction: 'ASC' },
+      }),
+    ]);
+
+    const periodTransactions = transactions.filter((transaction) => {
+      const transactionDate = new Date(transaction.date_transaction);
+      return (
+        (!start || transactionDate >= start) && (!end || transactionDate <= end)
+      );
+    });
+
+    let endBalance = Number(compte.solde || 0);
+    if (end) {
+      for (const transaction of transactions) {
+        if (new Date(transaction.date_transaction) <= end) continue;
+        const amount = Number(transaction.montant_transaction || 0);
+        endBalance +=
+          transaction.type_transaction === 'retrait' ? amount : -amount;
+      }
+    }
+
+    const totalCredits = periodTransactions
+      .filter((transaction) => transaction.type_transaction === 'versement')
+      .reduce(
+        (total, transaction) =>
+          total + Number(transaction.montant_transaction || 0),
+        0,
+      );
+    const totalDebits = periodTransactions
+      .filter((transaction) => transaction.type_transaction === 'retrait')
+      .reduce(
+        (total, transaction) =>
+          total + Number(transaction.montant_transaction || 0),
+        0,
+      );
+    const openingBalance = endBalance - totalCredits + totalDebits;
+
+    return this.renderStatementPdf({
+      compte,
+      client,
+      typeCompte,
+      transactions: periodTransactions,
+      openingBalance,
+      endBalance,
+      totalCredits,
+      totalDebits,
+      dateDebut,
+      dateFin,
+    });
+  }
+
+  private statementDate(value?: string, endOfDay = false): Date | null {
+    const normalized = String(value || '').trim();
+    if (!normalized) return null;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(normalized)) {
+      throw new BadRequestException(
+        'Format de date invalide. Utilisez AAAA-MM-JJ.',
+      );
+    }
+    const date = new Date(
+      `${normalized}T${endOfDay ? '23:59:59.999' : '00:00:00.000'}`,
+    );
+    if (Number.isNaN(date.getTime())) {
+      throw new BadRequestException('Date de releve invalide.');
+    }
+    return date;
+  }
+
+  private renderStatementPdf(data: {
+    compte: Compte;
+    client: Client | null;
+    typeCompte: Typecompte | null;
+    transactions: Transaction[];
+    openingBalance: number;
+    endBalance: number;
+    totalCredits: number;
+    totalDebits: number;
+    dateDebut?: string;
+    dateFin?: string;
+  }): Promise<Buffer> {
+    return new Promise((resolve, reject) => {
+      const document = new PDFDocument({ size: 'A4', margin: 40 });
+      const chunks: Buffer[] = [];
+      document.on('data', (chunk: Buffer) => chunks.push(chunk));
+      document.on('error', reject);
+      document.on('end', () => resolve(Buffer.concat(chunks)));
+
+      const money = (value: number) =>
+        `${Math.round(value).toLocaleString('fr-FR')} FCFA`;
+      const formatDate = (value: Date) =>
+        new Intl.DateTimeFormat('fr-FR', {
+          dateStyle: 'short',
+          timeStyle: 'short',
+        }).format(new Date(value));
+      const clientName = [data.client?.nom, data.client?.prenom]
+        .filter(Boolean)
+        .join(' ')
+        .trim();
+      const period =
+        data.dateDebut && data.dateFin
+          ? `Du ${data.dateDebut} au ${data.dateFin}`
+          : data.dateDebut
+            ? `Depuis le ${data.dateDebut}`
+            : data.dateFin
+              ? `Jusqu'au ${data.dateFin}`
+              : 'Toutes les dates';
+
+      document
+        .fillColor('#0f4c5c')
+        .font('Helvetica-Bold')
+        .fontSize(20)
+        .text('SBS - RELEVE DE COMPTE', { align: 'center' });
+      document
+        .moveDown(0.4)
+        .fillColor('#333333')
+        .font('Helvetica')
+        .fontSize(9)
+        .text(
+          `Edite le ${new Intl.DateTimeFormat('fr-FR').format(new Date())}`,
+          {
+            align: 'center',
+          },
+        );
+
+      document.moveDown(1.3);
+      const infoTop = document.y;
+      document
+        .font('Helvetica-Bold')
+        .fontSize(10)
+        .text('Titulaire', 40, infoTop)
+        .font('Helvetica')
+        .text(clientName || `Client #${data.compte.idclient}`, 125, infoTop)
+        .font('Helvetica-Bold')
+        .text('Compte', 330, infoTop)
+        .font('Helvetica')
+        .text(data.compte.numero_compte, 400, infoTop);
+      document
+        .font('Helvetica-Bold')
+        .text('Type', 40, infoTop + 18)
+        .font('Helvetica')
+        .text(data.typeCompte?.libelle || '-', 125, infoTop + 18)
+        .font('Helvetica-Bold')
+        .text('Periode', 330, infoTop + 18)
+        .font('Helvetica')
+        .text(period, 400, infoTop + 18, { width: 155 });
+
+      document.y = infoTop + 55;
+      const summaryTop = document.y;
+      const summary = [
+        ['Solde initial', money(data.openingBalance)],
+        ['Total credits', money(data.totalCredits)],
+        ['Total debits', money(data.totalDebits)],
+        ['Solde final', money(data.endBalance)],
+      ];
+      summary.forEach(([label, value], index) => {
+        const x = 40 + index * 129;
+        document
+          .roundedRect(x, summaryTop, 119, 42, 5)
+          .fill(index === 3 ? '#0f4c5c' : '#edf5f6');
+        document
+          .fillColor(index === 3 ? '#ffffff' : '#43515a')
+          .font('Helvetica')
+          .fontSize(8)
+          .text(label, x + 8, summaryTop + 7, { width: 103 });
+        document
+          .font('Helvetica-Bold')
+          .fontSize(9)
+          .text(value, x + 8, summaryTop + 22, { width: 103 });
+      });
+
+      const drawTableHeader = (top: number) => {
+        document.rect(40, top, 515, 22).fill('#0f4c5c');
+        document.fillColor('#ffffff').font('Helvetica-Bold').fontSize(8);
+        document.text('Date', 45, top + 7, { width: 75 });
+        document.text('Operation / reference', 123, top + 7, { width: 195 });
+        document.text('Debit', 322, top + 7, { width: 70, align: 'right' });
+        document.text('Credit', 397, top + 7, { width: 70, align: 'right' });
+        document.text('Solde', 472, top + 7, { width: 78, align: 'right' });
+        return top + 22;
+      };
+
+      document.y = summaryTop + 62;
+      let rowTop = drawTableHeader(document.y);
+      let runningBalance = data.openingBalance;
+
+      if (data.transactions.length === 0) {
+        document
+          .fillColor('#666666')
+          .font('Helvetica-Oblique')
+          .fontSize(9)
+          .text('Aucune operation sur cette periode.', 45, rowTop + 12, {
+            width: 505,
+            align: 'center',
+          });
+        rowTop += 38;
+      }
+
+      data.transactions.forEach((transaction, index) => {
+        if (rowTop > 745) {
+          document.addPage();
+          rowTop = drawTableHeader(40);
+        }
+        const amount = Number(transaction.montant_transaction || 0);
+        const isCredit = transaction.type_transaction === 'versement';
+        runningBalance += isCredit ? amount : -amount;
+        if (index % 2 === 0) {
+          document.rect(40, rowTop, 515, 34).fill('#f7fafb');
+        }
+        document.fillColor('#263238').font('Helvetica').fontSize(7.5);
+        document.text(
+          formatDate(transaction.date_transaction),
+          45,
+          rowTop + 7,
+          {
+            width: 75,
+          },
+        );
+        const operation = [
+          isCredit ? 'Versement' : 'Retrait',
+          transaction.references,
+          transaction.description,
+        ]
+          .filter(Boolean)
+          .join(' - ');
+        document.text(operation, 123, rowTop + 7, {
+          width: 195,
+          height: 22,
+          ellipsis: true,
+        });
+        document.text(isCredit ? '-' : money(amount), 322, rowTop + 7, {
+          width: 70,
+          align: 'right',
+        });
+        document.text(isCredit ? money(amount) : '-', 397, rowTop + 7, {
+          width: 70,
+          align: 'right',
+        });
+        document
+          .font('Helvetica-Bold')
+          .text(money(runningBalance), 472, rowTop + 7, {
+            width: 78,
+            align: 'right',
+          });
+        rowTop += 34;
+      });
+
+      document
+        .moveTo(40, rowTop + 8)
+        .lineTo(555, rowTop + 8)
+        .strokeColor('#9fb8bd')
+        .stroke();
+      document
+        .fillColor('#607d86')
+        .font('Helvetica')
+        .fontSize(8)
+        .text(
+          'Ce document est genere electroniquement par SBS.',
+          40,
+          rowTop + 18,
+          { width: 515, align: 'center' },
+        );
+
+      document.end();
+    });
   }
 }

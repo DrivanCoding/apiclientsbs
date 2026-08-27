@@ -12,6 +12,7 @@ import { ListeOperator } from '../entities/liste-operator.entity';
 import { PaynoteModule } from '../paynote/paynote.module';
 import { MavianceModule } from '../maviance/maviance.module';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { PaynoteWebhookController } from './paynote-webhook.controller';
 import { TransactionsController } from './transactions.controller';
 import { TransactionsService } from './transactions.service';
 
@@ -32,7 +33,7 @@ import { TransactionsService } from './transactions.service';
     MavianceModule,
     NotificationsModule,
   ],
-  controllers: [TransactionsController],
+  controllers: [TransactionsController, PaynoteWebhookController],
   providers: [TransactionsService],
 })
-export class TransactionsModule {}
+export class TransactionsModule { }

@@ -5,6 +5,8 @@ import {
   IsOptional,
   IsPositive,
   IsString,
+  Matches,
+  MaxLength,
   Min,
 } from 'class-validator';
 
@@ -22,10 +24,12 @@ export class PreouvertureDto {
 
   @IsString()
   @IsNotEmpty()
+  @MaxLength(20)
   telephone_principal: string;
 
   @IsOptional()
   @IsString()
+  @MaxLength(20)
   numero_telephone?: string;
 
   @IsString()
@@ -75,6 +79,8 @@ export class PreouvertureDto {
 
   @IsOptional()
   @IsString()
+  @MaxLength(80)
+  @Matches(/^[A-Za-z0-9._-]+$/)
   references?: string;
 
   @IsOptional()

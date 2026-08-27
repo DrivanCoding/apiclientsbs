@@ -368,9 +368,9 @@ export class AdminService {
         dto.mot_de_passe.startsWith('$2y$'));
 
     const mot_de_passe = dto.mot_de_passe
-      ? (isAlreadyHashed
-          ? dto.mot_de_passe
-          : await bcrypt.hash(dto.mot_de_passe.trim(), 10))
+      ? isAlreadyHashed
+        ? dto.mot_de_passe
+        : await bcrypt.hash(dto.mot_de_passe.trim(), 10)
       : undefined;
 
     const client = this.clientRepository.create({
@@ -502,6 +502,10 @@ export class AdminService {
     if (!demande) {
       throw new NotFoundException('Preouverture tampon introuvable');
     }
+    this.assertPaymentAllowsAdministrativeValidation(
+      demande.statut_validation,
+      payload.statut_validation,
+    );
     demande.statut_validation =
       payload.statut_validation ?? demande.statut_validation;
     demande.message_validation =
@@ -518,12 +522,35 @@ export class AdminService {
     if (!demande) {
       throw new NotFoundException('Ouverture compte tampon introuvable');
     }
+    this.assertPaymentAllowsAdministrativeValidation(
+      demande.statut_validation,
+      payload.statut_validation,
+    );
     demande.statut_validation =
       payload.statut_validation ?? demande.statut_validation;
     demande.message_validation =
       payload.message_validation ?? demande.message_validation;
     demande.updated_at = new Date();
     return this.ouvertureTamponRepository.save(demande);
+  }
+
+  private assertPaymentAllowsAdministrativeValidation(
+    currentStatus: string,
+    requestedStatus?: string,
+  ) {
+    if (currentStatus !== 'payment_pending' || !requestedStatus) return;
+    const allowedWhilePending = new Set([
+      'payment_pending',
+      'payment_failed',
+      'rejected',
+      'refused',
+      'annulee',
+    ]);
+    if (!allowedWhilePending.has(requestedStatus.trim().toLowerCase())) {
+      throw new BadRequestException(
+        'Validation impossible: le paiement operateur n est pas encore confirme.',
+      );
+    }
   }
 
   async findTypecompteById(idtype: number) {

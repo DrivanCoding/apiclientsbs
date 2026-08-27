@@ -30,12 +30,23 @@ import { DepositDto } from './dto/deposit.dto';
 import { OuvertureCompteDto } from './dto/ouverture-compte.dto';
 import { PreouvertureDto } from './dto/preouverture.dto';
 import { CollecteSyncNotificationDto } from './dto/collecte-sync-notification.dto';
+import { randomBytes } from 'crypto';
 
 type PaymentDecision = 'success' | 'pending' | 'failed' | 'unknown';
 type UploadedPreouvertureFiles = Record<
   string,
   Array<{ filename: string; path: string }>
 >;
+type PaynotePendingOpening = {
+  references: string;
+  provider_message_id?: string;
+  operateur: string;
+  montant_initial: string;
+  payment_json?: string;
+  statut_validation: string;
+  message_validation?: string;
+  updated_at: Date;
+};
 
 @Injectable()
 export class TransactionsService {
@@ -175,75 +186,126 @@ export class TransactionsService {
     }
     await this.assertMobileDepositAllowed(compte.idtype);
 
-    const references =
-      dto.references?.trim() ||
-      `COLL-${Date.now()}-${Math.floor(Math.random() * 10000)
-        .toString()
-        .padStart(4, '0')}`;
+    const references = dto.references?.trim() || this.buildOrderId('COLL');
     const description =
       dto.description?.trim() ||
       `Collecte mobile ${normalizedOperator.toUpperCase()} sur ${dto.numero_telephone}`;
 
-    const payment = await this.collectWithConfiguredGateway({
-      operateur: normalizedOperator,
-      numeroTelephone: dto.numero_telephone,
-      montant: dto.montant_transaction,
-      references,
-      description,
-      idcompte: dto.idcompte,
-      idclient: effectiveClientId,
-    });
-
-    return this.dataSource.transaction(async (manager) => {
-      const compte = await manager.findOne(Compte, {
-        where: { idcompte: dto.idcompte },
-        lock: { mode: 'pessimistic_write' },
-      });
-
-      if (!compte || compte.idclient !== effectiveClientId) {
-        throw new NotFoundException('Compte introuvable');
+    // 1. Pré-enregistrement en base en statut 'en_attente' avant l'appel externe
+    let pendingTx = await this.repository.findOne({ where: { references } });
+    if (pendingTx) {
+      const sameRequest =
+        pendingTx.idcompte === compte.idcompte &&
+        Number(pendingTx.montant_transaction) === dto.montant_transaction &&
+        pendingTx.operateur === normalizedOperator;
+      if (!sameRequest) {
+        throw new BadRequestException(
+          'Cette reference de paiement est deja utilisee pour une autre operation.',
+        );
       }
-      await this.assertMobileDepositAllowed(compte.idtype, manager);
+      if (pendingTx.statut === 'complete') {
+        return {
+          message: 'Ce versement a deja ete valide.',
+          transaction: pendingTx,
+          status: 'complete',
+        };
+      }
+      if (pendingTx.statut === 'annulee') {
+        throw new BadRequestException(
+          'Cette reference correspond a un versement annule.',
+        );
+      }
+      return this.recheckTransactionStatus(references, effectiveClientId);
+    } else {
+      pendingTx = await this.repository.save(
+        this.repository.create({
+          iduser: dto.iduser,
+          idcompte: compte.idcompte,
+          montant_transaction: dto.montant_transaction.toFixed(2),
+          type_transaction: 'versement',
+          operateur: normalizedOperator,
+          idcompteimpact: operatorLedger?.idcompte_debit,
+          statut: 'en_attente',
+          references,
+          description,
+        }),
+      );
+    }
 
-      const currentSolde = parseFloat(compte.solde ?? '0');
-      const newSolde = currentSolde + dto.montant_transaction;
-
-      const transaction = manager.create(Transaction, {
-        iduser: dto.iduser,
-        idcompte: compte.idcompte,
-        montant_transaction: dto.montant_transaction.toFixed(2),
-        type_transaction: 'versement',
+    // 2. Déclenchement du paiement vers la passerelle (Paynote ou Maviance)
+    let paymentResult: unknown;
+    try {
+      paymentResult = await this.collectWithConfiguredGateway({
         operateur: normalizedOperator,
-        idcompteimpact: operatorLedger?.idcompte_debit,
-        statut: 'complete',
+        numeroTelephone: dto.numero_telephone,
+        montant: dto.montant_transaction,
         references,
         description,
-      });
-
-      const savedTransaction = await manager.save(transaction);
-
-      compte.solde = newSolde.toFixed(2);
-      await manager.save(compte);
-
-      const notification = manager.create(Notification, {
+        idcompte: dto.idcompte,
         idclient: effectiveClientId,
-        titre: 'Versement reussi',
-        message: this.buildDepositNotificationMessage({
-          amount: dto.montant_transaction,
-          numeroCompte: compte.numero_compte,
-        }),
-        type: 'versement',
-        lu: 0,
+        onProviderReference: async (messageId) => {
+          pendingTx.provider_message_id = messageId;
+          await this.repository.update(pendingTx.idtransaction, {
+            provider_message_id: messageId,
+          });
+        },
       });
-      const savedNotification = await manager.save(notification);
-      this.notificationsService.emitCreated(savedNotification);
+    } catch (error) {
+      // Si la session synchrone a expiré mais que la demande est partie chez l'opérateur
+      const isPendingTimeout =
+        error instanceof BadGatewayException &&
+        (error.message.includes('en attente') ||
+          error.message.includes('non confirme') ||
+          error.message.includes('accepted_pending'));
+      const providerRequestWasCreated = Boolean(pendingTx.provider_message_id);
 
+      if (isPendingTimeout || providerRequestWasCreated) {
+        this.logger.warn(
+          `Depot ${references}: attente synchrone expiree. Transaction conservee en 'en_attente'.`,
+        );
+        return {
+          message:
+            'Demande de paiement transmise. Votre compte sera credite automatiquement des confirmation par l operateur.',
+          status: 'pending',
+          transaction: pendingTx,
+          references,
+        };
+      }
+
+      // En cas de rejet définitif immédiat par l'opérateur
+      await this.failPendingDeposit(references, {
+        error: (error as Error)?.message,
+      });
+      throw error;
+    }
+
+    // 3. Si le paiement est validé avec succès
+    if (
+      paymentResult &&
+      typeof paymentResult === 'object' &&
+      'provider_state' in paymentResult &&
+      paymentResult.provider_state === 'accepted_pending'
+    ) {
       return {
-        message: 'Paiement valide. Votre versement a ete enregistre.',
-        transaction: savedTransaction,
-        payment,
+        message:
+          'Demande de paiement transmise. Le compte sera credite uniquement apres confirmation de l operateur.',
+        status: 'pending',
+        transaction: pendingTx,
+        references,
       };
-    });
+    }
+
+    const finalized = await this.finalizePendingDeposit(
+      references,
+      paymentResult,
+    );
+
+    return {
+      message: 'Paiement valide. Votre versement a ete enregistre.',
+      transaction: finalized.transaction || pendingTx,
+      payment: paymentResult,
+      status: 'complete',
+    };
   }
 
   async syncCollecteNotification(dto: CollecteSyncNotificationDto) {
@@ -374,7 +436,6 @@ export class TransactionsService {
     }
 
     const typeCompte = await this.assertMobileOpeningAllowed(dto.idtype);
-    await this.assertTypeNotOwned(authenticatedClientId, dto.idtype);
 
     const minimum = this.openingMinimum(typeCompte);
     if (dto.montant_initial < minimum) {
@@ -384,22 +445,33 @@ export class TransactionsService {
     }
 
     const normalizedOperator = await this.normalizeOperator(dto.operateur);
-    const references =
-      dto.references?.trim() ||
-      `OUV-${Date.now()}-${Math.floor(Math.random() * 10000)
-        .toString()
-        .padStart(4, '0')}`;
+    const references = dto.references?.trim() || this.buildOrderId('OUV');
     const description =
       dto.description?.trim() ||
       `Ouverture compte ${typeCompte.libelle} ${normalizedOperator.toUpperCase()} - ${dto.numero_telephone}`;
 
-    const payment = await this.collectWithPaynote({
-      operateur: normalizedOperator,
-      numeroTelephone: dto.numero_telephone,
-      montant: dto.montant_initial,
-      references,
-      description,
+    const existing = await this.ouvertureTamponRepository.findOne({
+      where: { references },
     });
+    if (existing) {
+      if (
+        existing.idclient !== authenticatedClientId ||
+        existing.idtype !== typeCompte.idtype ||
+        Number(existing.montant_initial) !== dto.montant_initial ||
+        existing.operateur !== normalizedOperator
+      ) {
+        throw new BadRequestException(
+          'Cette reference est deja utilisee pour une autre ouverture.',
+        );
+      }
+      return {
+        message: 'Cette demande d ouverture existe deja.',
+        demande: existing,
+        payment: this.parseStoredPayment(existing.payment_json),
+        status: existing.statut_validation,
+      };
+    }
+    await this.assertTypeNotOwned(authenticatedClientId, dto.idtype);
 
     const demande = await this.ouvertureTamponRepository.save(
       this.ouvertureTamponRepository.create({
@@ -413,17 +485,59 @@ export class TransactionsService {
         numero_telephone: dto.numero_telephone.trim(),
         references,
         description,
-        payment_json: JSON.stringify(payment),
-        statut_validation: 'pending_validation',
+        statut_validation: 'payment_pending',
         updated_at: new Date(),
       }),
     );
 
+    let payment: unknown;
+    try {
+      payment = await this.collectWithConfiguredGateway({
+        operateur: normalizedOperator,
+        numeroTelephone: dto.numero_telephone,
+        montant: dto.montant_initial,
+        references,
+        description,
+        onProviderReference: async (messageId) => {
+          demande.provider_message_id = messageId;
+          await this.ouvertureTamponRepository.update(demande.id, {
+            provider_message_id: messageId,
+          });
+        },
+      });
+    } catch (error) {
+      if (demande.provider_message_id) {
+        demande.message_validation =
+          'Paiement initie, confirmation operateur en attente.';
+        await this.ouvertureTamponRepository.save(demande);
+        return {
+          message: demande.message_validation,
+          demande,
+          status: 'payment_pending',
+        };
+      }
+      demande.statut_validation = 'payment_failed';
+      demande.message_validation =
+        error instanceof Error ? error.message : 'Paiement indisponible';
+      await this.ouvertureTamponRepository.save(demande);
+      throw error;
+    }
+
+    demande.payment_json = JSON.stringify(payment);
+    demande.statut_validation = this.isAcceptedPendingResult(payment)
+      ? 'payment_pending'
+      : 'pending_validation';
+    demande.updated_at = new Date();
+    await this.ouvertureTamponRepository.save(demande);
+
     return {
-      message: 'Demande d ouverture envoyee, en attente de validation',
+      message:
+        demande.statut_validation === 'payment_pending'
+          ? 'Paiement initie, confirmation operateur en attente.'
+          : 'Demande d ouverture envoyee, en attente de validation',
       demande,
       payment,
-      status: 'pending_validation',
+      status: demande.statut_validation,
     };
   }
 
@@ -544,18 +658,31 @@ export class TransactionsService {
 
     const numeroOperation =
       dto.numero_telephone?.trim() || dto.telephone_principal.trim();
-    const references = dto.references?.trim() || this.buildOrderId();
+    const references = dto.references?.trim() || this.buildOrderId('PRE');
     const description =
       dto.description?.trim() ||
       `Depot initial ${normalizedOperator.toUpperCase()} - ${numeroOperation}`;
 
-    const paynoteResult = await this.collectWithPaynote({
-      operateur: normalizedOperator,
-      numeroTelephone: numeroOperation,
-      montant: dto.montant_initial,
-      references,
-      description,
+    const existing = await this.preouvertureTamponRepository.findOne({
+      where: { references },
     });
+    if (existing) {
+      if (
+        existing.email !== dto.email.trim().toLowerCase() ||
+        Number(existing.montant_initial) !== dto.montant_initial ||
+        existing.operateur !== normalizedOperator
+      ) {
+        throw new BadRequestException(
+          'Cette reference est deja utilisee pour une autre pre-ouverture.',
+        );
+      }
+      return {
+        message: 'Cette demande de pre-ouverture existe deja.',
+        demande: existing,
+        payment: this.parseStoredPayment(existing.payment_json),
+        status: existing.statut_validation,
+      };
+    }
 
     const demande = await this.preouvertureTamponRepository.save(
       this.preouvertureTamponRepository.create({
@@ -584,17 +711,62 @@ export class TransactionsService {
         photo_cni: legacyPhotoCni,
         photo_piece_recto: photoPieceRecto,
         photo_piece_verso: photoPieceVerso,
-        payment_json: JSON.stringify(paynoteResult),
-        statut_validation: 'pending_validation',
+        statut_validation: 'payment_pending',
         updated_at: new Date(),
       }),
     );
 
+    let paymentResult: unknown;
+    try {
+      paymentResult = await this.collectWithConfiguredGateway({
+        operateur: normalizedOperator,
+        numeroTelephone: numeroOperation,
+        montant: dto.montant_initial,
+        references,
+        description,
+        customerEmail: dto.email,
+        customerName: [dto.prenom, dto.nom].filter(Boolean).join(' '),
+        customerAddress: dto.adresse,
+        onProviderReference: async (messageId) => {
+          demande.provider_message_id = messageId;
+          await this.preouvertureTamponRepository.update(demande.id, {
+            provider_message_id: messageId,
+          });
+        },
+      });
+    } catch (error) {
+      if (demande.provider_message_id) {
+        demande.message_validation =
+          'Paiement initie, confirmation operateur en attente.';
+        await this.preouvertureTamponRepository.save(demande);
+        return {
+          message: demande.message_validation,
+          demande,
+          status: 'payment_pending',
+        };
+      }
+      demande.statut_validation = 'payment_failed';
+      demande.message_validation =
+        error instanceof Error ? error.message : 'Paiement indisponible';
+      await this.preouvertureTamponRepository.save(demande);
+      throw error;
+    }
+
+    demande.payment_json = JSON.stringify(paymentResult);
+    demande.statut_validation = this.isAcceptedPendingResult(paymentResult)
+      ? 'payment_pending'
+      : 'pending_validation';
+    demande.updated_at = new Date();
+    await this.preouvertureTamponRepository.save(demande);
+
     return {
-      message: 'Pre-ouverture envoyee, en attente de validation',
+      message:
+        demande.statut_validation === 'payment_pending'
+          ? 'Paiement initie, confirmation operateur en attente.'
+          : 'Pre-ouverture envoyee, en attente de validation',
       demande,
-      payment: paynoteResult,
-      status: 'pending_validation',
+      payment: paymentResult,
+      status: demande.statut_validation,
     };
   }
 
@@ -615,8 +787,12 @@ export class TransactionsService {
     montant: number;
     references: string;
     description: string;
-    idcompte: number;
-    idclient: number;
+    idcompte?: number;
+    idclient?: number;
+    customerEmail?: string;
+    customerName?: string;
+    customerAddress?: string;
+    onProviderReference?: (messageId: string) => Promise<void>;
   }) {
     if (this.getConfiguredPaymentGateway() === 'maviance') {
       return this.collectWithMaviance(payload);
@@ -631,6 +807,7 @@ export class TransactionsService {
     montant: number;
     references: string;
     description: string;
+    onProviderReference?: (messageId: string) => Promise<void>;
   }) {
     if (this.getConfiguredPaymentGateway() === 'maviance') {
       throw new BadRequestException(
@@ -640,44 +817,63 @@ export class TransactionsService {
 
     try {
       if (payload.operateur === 'om') {
-        const init = await this.paynoteService.initPayment();
-        const payToken = this.extractStringField(init, ['payToken']);
-        if (!payToken) {
-          throw new BadGatewayException(
-            'Initialisation Orange Money invalide (payToken absent)',
-          );
-        }
-
-        const payment = await this.paynoteService.pay({
+        const payment = await this.paynoteService.orangePay({
           amount: payload.montant,
           subscriberMsisdn: payload.numeroTelephone,
-          orderId: this.normalizeOrderId(payload.references, 20),
+          orderId: payload.references,
           description: payload.description,
-          payToken,
         });
 
-        const decision = this.getPaymentDecision(payment);
-        if (decision === 'success') {
-          return { init, payment };
-        }
-        if (decision === 'failed') {
+        const immediateDecision = this.getPaymentDecision(payment);
+        if (immediateDecision === 'failed') {
           throw new BadGatewayException(
             `Paiement Orange rejete: ${this.summarizePaymentState(payment)}`,
           );
         }
 
-        const confirmed = await this.pollPaymentStatus(async () =>
-          this.paynoteService.getPaymentStatus(payToken),
-        );
-        if (confirmed.decision !== 'success') {
+        const messageId = this.extractStringField(payment, [
+          'MessageId',
+          'message_id',
+          'messageId',
+          'paytoken',
+          'payToken',
+        ]);
+        if (!messageId) {
+          if (immediateDecision === 'success') return { payment };
           throw new BadGatewayException(
-            `Paiement Orange en attente/non confirme: ${this.summarizePaymentState(
-              confirmed.payload,
-            )}`,
+            'Paiement Orange initie mais aucun message_id retourne pour verifier le statut',
           );
         }
+        await payload.onProviderReference?.(messageId);
 
-        return { init, payment, status: confirmed.payload };
+        const confirmed = await this.pollPaymentStatus(async () =>
+          this.paynoteService.orangePaymentStatus({ messageId }),
+        );
+        if (confirmed.decision === 'success') {
+          return {
+            payment,
+            status: confirmed.payload,
+            provider_message_id: messageId,
+          };
+        }
+
+        if (
+          confirmed.decision === 'pending' &&
+          this.isProviderAccepted(confirmed.payload)
+        ) {
+          return {
+            payment,
+            status: confirmed.payload,
+            provider_state: 'accepted_pending',
+            provider_message_id: messageId,
+          };
+        }
+
+        throw new BadGatewayException(
+          `Paiement Orange en attente/non confirme: ${this.summarizePaymentState(
+            confirmed.payload,
+          )}`,
+        );
       }
 
       const payment = await this.paynoteService.mtnPay({
@@ -706,17 +902,21 @@ export class TransactionsService {
           'Paiement MTN initie mais aucun message_id retourne pour verifier le statut',
         );
       }
+      await payload.onProviderReference?.(messageId);
 
       const confirmed = await this.pollPaymentStatus(async () =>
         this.paynoteService.mtnPaymentStatus({ messageId }),
       );
       if (confirmed.decision === 'success') {
-        return { payment, status: confirmed.payload };
+        return {
+          payment,
+          status: confirmed.payload,
+          provider_message_id: messageId,
+        };
       }
 
-      // On MTN, Paynote can keep returning "Pay Request Accepted" while the user
-      // has already validated on handset. We accept provider-level 200/accepted
-      // to avoid false negatives and keep business flow moving.
+      // Un accusé "Pay Request Accepted" confirme seulement la prise en charge.
+      // Le crédit reste en attente jusqu'au statut final de l'opérateur.
       if (
         confirmed.decision === 'pending' &&
         this.isProviderAccepted(confirmed.payload)
@@ -725,6 +925,7 @@ export class TransactionsService {
           payment,
           status: confirmed.payload,
           provider_state: 'accepted_pending',
+          provider_message_id: messageId,
         };
       }
 
@@ -746,8 +947,11 @@ export class TransactionsService {
     montant: number;
     references: string;
     description: string;
-    idcompte: number;
-    idclient: number;
+    idcompte?: number;
+    idclient?: number;
+    customerEmail?: string;
+    customerName?: string;
+    customerAddress?: string;
   }) {
     const config = await this.findActiveOperatorConfig(payload.operateur);
     const payItemId = this.resolveMaviancePayItemId(payload.operateur, config);
@@ -758,13 +962,30 @@ export class TransactionsService {
       );
     }
 
-    const client = await this.clientRepository.findOneBy({
-      idclient: payload.idclient,
-    });
-    const customerName = [client?.prenom, client?.nom]
-      .filter(Boolean)
-      .join(' ')
-      .trim();
+    const client = payload.idclient
+      ? await this.clientRepository.findOneBy({ idclient: payload.idclient })
+      : null;
+    const customerName =
+      payload.customerName?.trim() ||
+      [client?.prenom, client?.nom].filter(Boolean).join(' ').trim();
+
+    const sandboxTestNumbers =
+      String(process.env.MAVIANCE_SANDBOX_USE_TEST_NUMBERS || '')
+        .trim()
+        .toLowerCase() === 'true';
+    const operatorKey = payload.operateur.toUpperCase();
+    const configuredCustomerPhone = sandboxTestNumbers
+      ? process.env[`MAVIANCE_SANDBOX_${operatorKey}_CUSTOMER_PHONE`]
+      : undefined;
+    const configuredServiceNumber = sandboxTestNumbers
+      ? process.env[`MAVIANCE_SANDBOX_${operatorKey}_SERVICE_NUMBER`]
+      : undefined;
+    const customerPhone = this.normalizeCameroonPhone(
+      configuredCustomerPhone || payload.numeroTelephone,
+    );
+    const serviceNumber = this.normalizeCameroonPhone(
+      configuredServiceNumber || payload.numeroTelephone,
+    );
 
     try {
       const quote = await this.mavianceClient.request<any>(
@@ -783,13 +1004,17 @@ export class TransactionsService {
 
       const collectPayload: Record<string, any> = {
         quoteId,
-        customerPhonenumber: this.normalizeCameroonPhone(
-          payload.numeroTelephone,
-        ),
-        customerEmailaddress: client?.email?.trim() || 'client@sbs.local',
+        customerPhonenumber: customerPhone,
+        customerEmailaddress:
+          payload.customerEmail?.trim() ||
+          client?.email?.trim() ||
+          'client@sbs.local',
         customerName: customerName || 'Client SBS',
-        customerAddress: client?.adresse?.trim() || 'Non renseignee',
-        serviceNumber: this.normalizeCameroonPhone(payload.numeroTelephone),
+        customerAddress:
+          payload.customerAddress?.trim() ||
+          client?.adresse?.trim() ||
+          'Non renseignee',
+        serviceNumber,
         trid: payload.references,
       };
 
@@ -1365,7 +1590,7 @@ export class TransactionsService {
   ): Promise<{ decision: PaymentDecision; payload: unknown }> {
     const attempts = Math.max(
       1,
-      Number(process.env.PAYNOTE_STATUS_POLL_ATTEMPTS ?? 20),
+      Number(process.env.PAYNOTE_STATUS_POLL_ATTEMPTS ?? 60),
     );
     const delayMs = Math.max(
       250,
@@ -1444,7 +1669,10 @@ export class TransactionsService {
     }
 
     const pendingDemande = await this.ouvertureTamponRepository.findOne({
-      where: { idclient, idtype, statut_validation: 'pending_validation' },
+      where: [
+        { idclient, idtype, statut_validation: 'pending_validation' },
+        { idclient, idtype, statut_validation: 'payment_pending' },
+      ],
     });
     if (pendingDemande) {
       throw new BadRequestException(
@@ -1501,12 +1729,26 @@ export class TransactionsService {
     ).padStart(4, '0')}`;
   }
 
-  private buildOrderId() {
-    const now = Date.now();
-    const random = Math.floor(Math.random() * 10000)
-      .toString()
-      .padStart(4, '0');
-    return `PRE-${now}-${random}`;
+  private buildOrderId(prefix: 'COLL' | 'OUV' | 'PRE') {
+    return `${prefix}-${Date.now()}-${randomBytes(6).toString('hex')}`;
+  }
+
+  private isAcceptedPendingResult(payment: unknown) {
+    return (
+      payment !== null &&
+      typeof payment === 'object' &&
+      'provider_state' in payment &&
+      payment.provider_state === 'accepted_pending'
+    );
+  }
+
+  private parseStoredPayment(value?: string) {
+    if (!value) return null;
+    try {
+      return JSON.parse(value) as unknown;
+    } catch {
+      return null;
+    }
   }
 
   private normalizeOrderId(value: string, maxLength: number) {
@@ -1541,5 +1783,532 @@ export class TransactionsService {
           .toLowerCase()
           .includes('operateur'))
     );
+  }
+
+  /**
+   * Finalise de manière idempotente et sécurisée un versement resté en_attente.
+   */
+  async finalizePendingDeposit(
+    reference: string,
+    providerPayload?: unknown,
+  ): Promise<{
+    success: boolean;
+    transaction: Transaction | null;
+    message: string;
+  }> {
+    void providerPayload;
+    return this.dataSource.transaction(async (manager) => {
+      const transaction = await manager.findOne(Transaction, {
+        where: { references: reference },
+        lock: { mode: 'pessimistic_write' },
+      });
+
+      if (!transaction) {
+        this.logger.warn(
+          `finalizePendingDeposit: transaction introuvable pour reference ${reference}`,
+        );
+        return {
+          success: false,
+          transaction: null,
+          message: 'Transaction introuvable',
+        };
+      }
+
+      // Idempotence : si déjà complétée, on ne recrédite pas le compte
+      if (transaction.statut === 'complete') {
+        this.logger.log(
+          `finalizePendingDeposit: transaction ${reference} deja completee (idempotence)`,
+        );
+        return {
+          success: true,
+          transaction,
+          message: 'Transaction deja validee',
+        };
+      }
+      if (
+        transaction.statut !== 'en_attente' ||
+        transaction.type_transaction !== 'versement'
+      ) {
+        return {
+          success: false,
+          transaction,
+          message: 'Transaction non eligible au credit',
+        };
+      }
+
+      const compte = await manager.findOne(Compte, {
+        where: { idcompte: transaction.idcompte },
+        lock: { mode: 'pessimistic_write' },
+      });
+
+      if (!compte) {
+        throw new NotFoundException(
+          `Compte ${transaction.idcompte} introuvable pour finaliser la transaction`,
+        );
+      }
+
+      const amount = parseFloat(transaction.montant_transaction);
+      if (!Number.isFinite(amount) || amount <= 0) {
+        throw new BadRequestException('Montant de transaction invalide');
+      }
+      const currentSolde = parseFloat(compte.solde ?? '0');
+      compte.solde = (currentSolde + amount).toFixed(2);
+      await manager.save(compte);
+
+      transaction.statut = 'complete';
+      const savedTransaction = await manager.save(transaction);
+
+      const idclient = Number(compte.idclient || 0);
+      if (idclient > 0) {
+        const notification = manager.create(Notification, {
+          idclient,
+          titre: 'Versement reussi',
+          message: this.buildDepositNotificationMessage({
+            amount,
+            numeroCompte: compte.numero_compte,
+          }),
+          type: 'versement',
+          lu: 0,
+        });
+        const savedNotification = await manager.save(notification);
+        this.notificationsService.emitCreated(savedNotification);
+      }
+
+      this.logger.log(
+        `finalizePendingDeposit: Transaction ${reference} confirmee et compte ${compte.numero_compte} credite de ${amount} XAF.`,
+      );
+      return {
+        success: true,
+        transaction: savedTransaction,
+        message: 'Versement complete avec succes',
+      };
+    });
+  }
+
+  /**
+   * Marque une transaction en_attente comme rejetée / annulée.
+   */
+  async failPendingDeposit(
+    reference: string,
+    providerPayload?: unknown,
+  ): Promise<{
+    success: boolean;
+    transaction: Transaction | null;
+    message: string;
+  }> {
+    void providerPayload;
+    return this.dataSource.transaction(async (manager) => {
+      const transaction = await manager.findOne(Transaction, {
+        where: { references: reference },
+        lock: { mode: 'pessimistic_write' },
+      });
+
+      if (!transaction) {
+        return {
+          success: false,
+          transaction: null,
+          message: 'Transaction introuvable',
+        };
+      }
+
+      if (transaction.statut === 'complete') {
+        return {
+          success: false,
+          transaction,
+          message: 'Impossible d annuler une transaction deja completee',
+        };
+      }
+
+      transaction.statut = 'annulee';
+      const saved = await manager.save(transaction);
+      this.logger.warn(
+        `failPendingDeposit: Transaction ${reference} marquee 'annulee'.`,
+      );
+      return {
+        success: true,
+        transaction: saved,
+        message: 'Transaction marquee annulee',
+      };
+    });
+  }
+
+  /**
+   * Traite un callback / webhook asynchrone envoyé par Paynote sur notifUrl.
+   */
+  async handlePaynoteWebhook(payload: any) {
+    if (!payload || typeof payload !== 'object') {
+      throw new BadRequestException('Payload webhook Paynote invalide');
+    }
+
+    const reference = this.extractStringField(payload, [
+      'order_id',
+      'orderId',
+      'references',
+      'request_id',
+      'requestId',
+    ]);
+    const callbackMessageId = this.extractStringField(payload, [
+      'MessageId',
+      'message_id',
+      'messageId',
+      'paytoken',
+      'payToken',
+    ]);
+
+    if (!reference && !callbackMessageId) {
+      this.logger.warn('Paynote webhook ignore: aucun identifiant reconnu');
+      return { status: 'ignored', reason: 'reference introuvable' };
+    }
+
+    let transaction: Transaction | null;
+    if (reference) {
+      transaction = await this.repository.findOne({
+        where: { references: reference },
+      });
+    } else if (callbackMessageId) {
+      transaction = await this.repository.findOne({
+        where: { provider_message_id: callbackMessageId },
+      });
+    } else {
+      return { status: 'ignored', reason: 'reference introuvable' };
+    }
+    if (!transaction) {
+      return this.handlePaynoteOpeningWebhook(reference, callbackMessageId);
+    }
+
+    const providerMessageId =
+      transaction.provider_message_id || callbackMessageId;
+    if (!providerMessageId) {
+      return { status: 'acknowledged', outcome: 'pending' };
+    }
+    const transactionReference = transaction.references;
+    if (!transactionReference) {
+      return { status: 'ignored', reason: 'order_id introuvable' };
+    }
+
+    let verifiedPayload: unknown;
+    const operator = String(transaction.operateur || '').toLowerCase();
+    if (operator.includes('om') || operator.includes('orange')) {
+      verifiedPayload = await this.paynoteService.orangePaymentStatus({
+        messageId: providerMessageId,
+      });
+    } else if (operator.includes('momo') || operator.includes('mtn')) {
+      verifiedPayload = await this.paynoteService.mtnPaymentStatus({
+        messageId: providerMessageId,
+      });
+    } else {
+      this.logger.warn(
+        `Paynote webhook ignore: operateur inconnu pour transaction ${transaction.idtransaction}`,
+      );
+      return { status: 'ignored', reason: 'operateur inconnu' };
+    }
+
+    const verifiedOrderId = this.extractStringField(verifiedPayload, [
+      'order_id',
+      'orderId',
+    ]);
+    if (verifiedOrderId && verifiedOrderId !== transactionReference) {
+      throw new BadGatewayException(
+        'Reference Paynote incoherente avec la transaction en attente.',
+      );
+    }
+    if (!transaction.provider_message_id) {
+      if (!callbackMessageId || verifiedOrderId !== transactionReference) {
+        return {
+          status: 'ignored',
+          reason: 'message_id non rattache a la transaction',
+        };
+      }
+      transaction.provider_message_id = callbackMessageId;
+      await this.repository.update(transaction.idtransaction, {
+        provider_message_id: callbackMessageId,
+      });
+    }
+
+    const providerAmount = this.extractStringField(verifiedPayload, ['amount']);
+    if (
+      providerAmount &&
+      Number(providerAmount) !== Number(transaction.montant_transaction)
+    ) {
+      this.logger.error(
+        `Paynote webhook refuse: montant incoherent pour transaction ${transaction.idtransaction}`,
+      );
+      throw new BadGatewayException(
+        'Montant Paynote incoherent avec la transaction en attente.',
+      );
+    }
+
+    const decision = this.getPaymentDecision(verifiedPayload);
+    this.logger.log(
+      `Paynote webhook verifie: transaction=${transaction.idtransaction}, decision=${decision}`,
+    );
+
+    if (decision === 'success') {
+      const result = await this.finalizePendingDeposit(
+        transactionReference,
+        verifiedPayload,
+      );
+      return { status: 'processed', outcome: 'success', details: result };
+    }
+
+    if (decision === 'failed') {
+      const result = await this.failPendingDeposit(
+        transactionReference,
+        verifiedPayload,
+      );
+      return { status: 'processed', outcome: 'failed', details: result };
+    }
+
+    return { status: 'acknowledged', outcome: 'pending' };
+  }
+
+  private async handlePaynoteOpeningWebhook(
+    reference: string | null,
+    callbackMessageId: string | null,
+  ) {
+    const opening = reference
+      ? await this.ouvertureTamponRepository.findOne({
+          where: { references: reference },
+        })
+      : callbackMessageId
+        ? await this.ouvertureTamponRepository.findOne({
+            where: { provider_message_id: callbackMessageId },
+          })
+        : null;
+    if (opening) {
+      return this.reconcilePaynoteOpening(
+        opening,
+        callbackMessageId,
+        async () => this.ouvertureTamponRepository.save(opening),
+      );
+    }
+
+    const preopening = reference
+      ? await this.preouvertureTamponRepository.findOne({
+          where: { references: reference },
+        })
+      : callbackMessageId
+        ? await this.preouvertureTamponRepository.findOne({
+            where: { provider_message_id: callbackMessageId },
+          })
+        : null;
+    if (preopening) {
+      return this.reconcilePaynoteOpening(
+        preopening,
+        callbackMessageId,
+        async () => this.preouvertureTamponRepository.save(preopening),
+      );
+    }
+
+    this.logger.warn('Paynote webhook ignore: operation introuvable');
+    return { status: 'ignored', reason: 'operation introuvable' };
+  }
+
+  private async reconcilePaynoteOpening<T extends PaynotePendingOpening>(
+    demande: T,
+    callbackMessageId: string | null,
+    save: () => Promise<unknown>,
+  ) {
+    const messageId = demande.provider_message_id || callbackMessageId;
+    if (!messageId) {
+      return { status: 'acknowledged', outcome: 'pending' };
+    }
+
+    const operator = String(demande.operateur || '').toLowerCase();
+    const verifiedPayload =
+      operator.includes('om') || operator.includes('orange')
+        ? await this.paynoteService.orangePaymentStatus({ messageId })
+        : operator.includes('momo') || operator.includes('mtn')
+          ? await this.paynoteService.mtnPaymentStatus({ messageId })
+          : null;
+    if (!verifiedPayload) {
+      return { status: 'ignored', reason: 'operateur inconnu' };
+    }
+
+    const verifiedOrderId = this.extractStringField(verifiedPayload, [
+      'order_id',
+      'orderId',
+    ]);
+    if (verifiedOrderId && verifiedOrderId !== demande.references) {
+      throw new BadGatewayException(
+        'Reference Paynote incoherente avec la demande d ouverture.',
+      );
+    }
+    if (!demande.provider_message_id) {
+      if (!callbackMessageId || verifiedOrderId !== demande.references) {
+        return {
+          status: 'ignored',
+          reason: 'message_id non rattache a la demande',
+        };
+      }
+      demande.provider_message_id = callbackMessageId;
+    }
+
+    const providerAmount = this.extractStringField(verifiedPayload, ['amount']);
+    if (
+      providerAmount &&
+      Number(providerAmount) !== Number(demande.montant_initial)
+    ) {
+      throw new BadGatewayException(
+        'Montant Paynote incoherent avec la demande d ouverture.',
+      );
+    }
+
+    const decision = this.getPaymentDecision(verifiedPayload);
+    demande.payment_json = JSON.stringify(verifiedPayload);
+    demande.updated_at = new Date();
+    if (decision === 'success') {
+      demande.statut_validation = 'pending_validation';
+      demande.message_validation =
+        'Paiement confirme. Demande en attente de validation administrative.';
+    } else if (decision === 'failed') {
+      demande.statut_validation = 'payment_failed';
+      demande.message_validation = 'Paiement refuse par l operateur.';
+    } else {
+      demande.statut_validation = 'payment_pending';
+      demande.message_validation = 'Confirmation operateur en attente.';
+    }
+    await save();
+
+    return {
+      status:
+        decision === 'success' || decision === 'failed'
+          ? 'processed'
+          : 'acknowledged',
+      outcome: decision,
+    };
+  }
+
+  /**
+   * Vérifie et réconcilie le statut d'une transaction à la demande.
+   */
+  async recheckTransactionStatus(
+    references: string,
+    authenticatedClientId?: number,
+  ) {
+    const transaction = await this.repository.findOne({
+      where: { references },
+    });
+
+    if (!transaction) {
+      throw new NotFoundException(
+        `Transaction avec reference ${references} introuvable`,
+      );
+    }
+
+    if (authenticatedClientId) {
+      const compte = await this.compteRepository.findOne({
+        where: { idcompte: transaction.idcompte },
+      });
+      if (!compte || compte.idclient !== authenticatedClientId) {
+        throw new UnauthorizedException(
+          'Non autorise a consulter cette transaction',
+        );
+      }
+    }
+
+    if (transaction.statut === 'complete') {
+      return {
+        status: 'complete',
+        message: 'Transaction deja confirmee et compte credite',
+        transaction,
+      };
+    }
+
+    if (transaction.statut === 'annulee') {
+      return {
+        status: 'failed',
+        message: 'Transaction annulee',
+        transaction,
+      };
+    }
+
+    const operator = (transaction.operateur || '').toLowerCase();
+    const providerMessageId = transaction.provider_message_id;
+    if (!providerMessageId) {
+      return {
+        status: 'pending',
+        message:
+          'Identifiant Paynote indisponible. La transaction attend le webhook operateur.',
+        transaction,
+      };
+    }
+    let statusPayload: unknown;
+
+    try {
+      if (operator.includes('om') || operator.includes('orange')) {
+        statusPayload = await this.paynoteService.orangePaymentStatus({
+          messageId: providerMessageId,
+        });
+      } else if (operator.includes('momo') || operator.includes('mtn')) {
+        statusPayload = await this.paynoteService.mtnPaymentStatus({
+          messageId: providerMessageId,
+        });
+      } else {
+        throw new BadRequestException(
+          'Operateur Paynote inconnu pour cette transaction.',
+        );
+      }
+    } catch (err) {
+      this.logger.warn(
+        `recheckTransactionStatus: impossible d interroger le statut operateur pour ${references}: ${(err as Error)?.message}`,
+      );
+      return {
+        status: 'pending',
+        message: 'Statut en cours de traitement par l operateur',
+        transaction,
+      };
+    }
+
+    const providerAmount = this.extractStringField(statusPayload, ['amount']);
+    const providerOrderId = this.extractStringField(statusPayload, [
+      'order_id',
+      'orderId',
+    ]);
+    if (providerOrderId && providerOrderId !== references) {
+      throw new BadGatewayException(
+        'Reference Paynote incoherente avec la transaction en attente.',
+      );
+    }
+    if (
+      providerAmount &&
+      Number(providerAmount) !== Number(transaction.montant_transaction)
+    ) {
+      throw new BadGatewayException(
+        'Montant Paynote incoherent avec la transaction en attente.',
+      );
+    }
+
+    const decision = this.getPaymentDecision(statusPayload);
+
+    if (decision === 'success') {
+      const finalized = await this.finalizePendingDeposit(
+        references,
+        statusPayload,
+      );
+      return {
+        status: 'complete',
+        message: 'Paiement confirme avec succes. Votre compte a ete credite.',
+        transaction: finalized.transaction || transaction,
+        statusPayload,
+      };
+    }
+
+    if (decision === 'failed') {
+      await this.failPendingDeposit(references, statusPayload);
+      return {
+        status: 'failed',
+        message: 'Paiement rejete par l operateur',
+        transaction,
+        statusPayload,
+      };
+    }
+
+    return {
+      status: 'pending',
+      message: 'Paiement toujours en attente de confirmation sur le telephone',
+      transaction,
+      statusPayload,
+    };
   }
 }

@@ -29,8 +29,11 @@ export class OuvertureCompteTampon {
   @Column({ length: 20 })
   numero_telephone: string;
 
-  @Column({ length: 120 })
+  @Column({ length: 120, unique: true })
   references: string;
+
+  @Column({ length: 128, nullable: true, unique: true })
+  provider_message_id?: string;
 
   @Column({ type: 'text', nullable: true })
   description?: string;

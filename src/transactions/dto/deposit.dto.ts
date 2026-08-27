@@ -1,4 +1,12 @@
-import { IsNotEmpty, IsNumber, IsOptional, IsPositive, IsString } from 'class-validator';
+import {
+  IsNotEmpty,
+  IsNumber,
+  IsOptional,
+  IsPositive,
+  IsString,
+  Matches,
+  MaxLength,
+} from 'class-validator';
 
 export class DepositDto {
   @IsOptional()
@@ -22,10 +30,13 @@ export class DepositDto {
 
   @IsString()
   @IsNotEmpty()
+  @MaxLength(20)
   numero_telephone: string;
 
   @IsOptional()
   @IsString()
+  @MaxLength(80)
+  @Matches(/^[A-Za-z0-9._-]+$/)
   references?: string;
 
   @IsOptional()

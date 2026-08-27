@@ -22,6 +22,7 @@ import { extname, join } from 'path';
 import { existsSync, mkdirSync } from 'fs';
 import { Transaction } from '../entities/transaction.entity';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { AdminRoleGuard } from '../auth/admin-role.guard';
 import { TransactionsService } from './transactions.service';
 import { DepositDto } from './dto/deposit.dto';
 import { OuvertureCompteDto } from './dto/ouverture-compte.dto';
@@ -57,6 +58,7 @@ export class TransactionsController {
   constructor(private readonly service: TransactionsService) {}
 
   @Post()
+  @UseGuards(JwtAuthGuard, AdminRoleGuard)
   create(@Body() payload: Partial<Transaction>) {
     return this.service.create(payload);
   }
@@ -69,6 +71,16 @@ export class TransactionsController {
   ) {
     const idclient = Number(req.user?.idclient || 0);
     return this.service.deposit(dto, idclient);
+  }
+
+  @Post('recheck-status/:references')
+  @UseGuards(JwtAuthGuard)
+  recheckStatus(
+    @Param('references') references: string,
+    @Req() req: { user?: { idclient?: number } },
+  ) {
+    const idclient = Number(req.user?.idclient || 0);
+    return this.service.recheckTransactionStatus(references, idclient);
   }
 
   @Post('core-sync/collecte-notification')
@@ -150,6 +162,7 @@ export class TransactionsController {
   }
 
   @Get()
+  @UseGuards(JwtAuthGuard, AdminRoleGuard)
   findAll(@Query('page') page?: string, @Query('limit') limit?: string) {
     const pageNum = page ? parseInt(page, 10) : undefined;
     const limitNum = limit ? parseInt(limit, 10) : undefined;
@@ -157,6 +170,7 @@ export class TransactionsController {
   }
 
   @Get('client/:id')
+  @UseGuards(JwtAuthGuard, AdminRoleGuard)
   findByClient(
     @Param('id', ParseIntPipe) id: number,
     @Query('date_debut') dateDebut?: string,
@@ -166,11 +180,13 @@ export class TransactionsController {
   }
 
   @Get(':id')
+  @UseGuards(JwtAuthGuard, AdminRoleGuard)
   findOne(@Param('id', ParseIntPipe) id: number) {
     return this.service.findOne(id);
   }
 
   @Patch(':id')
+  @UseGuards(JwtAuthGuard, AdminRoleGuard)
   update(
     @Param('id', ParseIntPipe) id: number,
     @Body() payload: Partial<Transaction>,
@@ -179,6 +195,7 @@ export class TransactionsController {
   }
 
   @Delete(':id')
+  @UseGuards(JwtAuthGuard, AdminRoleGuard)
   remove(@Param('id', ParseIntPipe) id: number) {
     return this.service.remove(id);
   }

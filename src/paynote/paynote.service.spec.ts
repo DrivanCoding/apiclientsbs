@@ -3,12 +3,6 @@ import { PaynoteService } from './paynote.service';
 const originalFetch = global.fetch;
 const originalEnv = process.env;
 
-function mockFetchOnce(response: Partial<Response>) {
-  global.fetch = jest
-    .fn()
-    .mockResolvedValue(response) as unknown as typeof fetch;
-}
-
 function tokenResponse(accessToken: string): Partial<Response> {
   return {
     ok: true,
@@ -20,16 +14,18 @@ function tokenResponse(accessToken: string): Partial<Response> {
   };
 }
 
-function invalidCredentialsXmlResponse(): Partial<Response> {
+function unauthorizedFaultResponse(): Partial<Response> {
   return {
     ok: false,
     status: 401,
     text: async () =>
-      '<ams:fault xmlns:ams="http://wso2.org/apimanager/security">' +
-      '<ams:code>900901</ams:code>' +
-      '<ams:message>Invalid Credentials</ams:message>' +
-      '<ams:description>Access failure for API: /omcoreapis/1.0.2, version: 1.0.2 status: (900901) - Invalid Credentials.</ams:description>' +
-      '</ams:fault>',
+      JSON.stringify({
+        fault: {
+          code: '900901',
+          message: 'Invalid Credentials',
+          description: 'Access failure for API: /webpayment',
+        },
+      }),
   };
 }
 
@@ -37,11 +33,14 @@ describe('PaynoteService', () => {
   beforeEach(() => {
     process.env = {
       ...originalEnv,
-      PAYNOTE_ORANGE_CUSTOMER_KEY: 'customer-key',
-      PAYNOTE_ORANGE_CUSTOMER_SECRET: 'customer-secret',
-      PAYNOTE_ORANGE_X_AUTH_TOKEN: 'x-auth-token',
-      PAYNOTE_ORANGE_TOKEN_URL: 'https://api-s1.orange.cm/token',
-      PAYNOTE_ORANGE_API_BASE: 'https://api-s1.orange.cm',
+      PAYNOTE_CLIENT_ID: 'test-client-id',
+      PAYNOTE_CLIENT_SECRET: 'test-client-secret',
+      PAYNOTE_CUSTOMER_KEY: 'test-customer-key',
+      PAYNOTE_CUSTOMER_SECRET: 'test-customer-secret',
+      PAYNOTE_NOTIF_URL: 'https://mysite.com/notif',
+      PAYNOTE_WEBHOOK_SECRET: 'test-webhook-secret',
+      PAYNOTE_TOKEN_URL: 'https://omapi-token.ynote.africa/oauth2/token',
+      PAYNOTE_API_BASE: 'https://omapi.ynote.africa/prod',
       PAYNOTE_TIMEOUT_MS: '1000',
     };
   });
@@ -52,90 +51,227 @@ describe('PaynoteService', () => {
     jest.restoreAllMocks();
   });
 
-  it('maps Orange 900901 XML faults to a safe credentials message', async () => {
+  it('performs Orange Money payment via unified API_MUT endpoint', async () => {
     const service = new PaynoteService();
 
     global.fetch = jest
       .fn()
-      .mockResolvedValueOnce(tokenResponse('access-token'))
-      .mockResolvedValueOnce(invalidCredentialsXmlResponse())
-      .mockResolvedValueOnce(tokenResponse('refreshed-token'))
-      .mockResolvedValueOnce(
-        invalidCredentialsXmlResponse(),
-      ) as unknown as typeof fetch;
-
-    await expect(service.initPayment()).rejects.toMatchObject({
-      message: expect.stringContaining(
-        'Configuration Paynote/Orange invalide ou jeton expire.',
-      ),
-    });
-
-    global.fetch = jest
-      .fn()
-      .mockResolvedValueOnce(tokenResponse('access-token'))
-      .mockResolvedValueOnce(invalidCredentialsXmlResponse())
-      .mockResolvedValueOnce(tokenResponse('refreshed-token'))
-      .mockResolvedValueOnce(
-        invalidCredentialsXmlResponse(),
-      ) as unknown as typeof fetch;
-
-    try {
-      await service.initPayment();
-    } catch (error) {
-      expect((error as Error).message).not.toContain('<ams:fault');
-    }
-  });
-
-  it('refreshes the Orange token and retries init once after a 900901 fault', async () => {
-    const service = new PaynoteService();
-    global.fetch = jest
-      .fn()
-      .mockResolvedValueOnce(tokenResponse('expired-token'))
-      .mockResolvedValueOnce(invalidCredentialsXmlResponse())
-      .mockResolvedValueOnce(tokenResponse('fresh-token'))
+      .mockResolvedValueOnce(tokenResponse('test-token'))
       .mockResolvedValueOnce({
         ok: true,
         json: async () => ({
-          message: 'Merchant payment request successfully initiated',
-          data: { payToken: 'pay-token' },
+          StatusCode: 200,
+          body: 'Pay Request Accepted',
+          ErrorMessage: '',
+          parameters: {
+            operation: 'OM_CMR collection ussd-mut',
+            MessageId: 'MP250000123',
+            currency: 'XAF',
+            amount: '1000',
+            subscriberMsisdn: '692000000',
+            order_id: 'ORD-001',
+            notifUrl: 'https://mysite.com/notif',
+          },
         }),
       }) as unknown as typeof fetch;
 
-    await expect(service.initPayment()).resolves.toMatchObject({
-      data: { payToken: 'pay-token' },
+    const result = await service.orangePay({
+      amount: 1000,
+      subscriberMsisdn: '692000000',
+      orderId: 'ORD-001',
+      description: 'Paiement test OM',
+    });
+
+    expect(result).toMatchObject({
+      StatusCode: 200,
+      parameters: {
+        MessageId: 'MP250000123',
+      },
+    });
+
+    const calls = (global.fetch as jest.Mock).mock.calls;
+    expect(calls[0][0]).toBe('https://omapi-token.ynote.africa/oauth2/token');
+    expect(calls[1][0]).toBe('https://omapi.ynote.africa/prod/webpayment');
+
+    const paymentBody = JSON.parse(calls[1][1].body);
+    expect(paymentBody.API_MUT).toMatchObject({
+      customerkey: 'test-customer-key',
+      customersecret: 'test-customer-secret',
+      order_id: 'ORD-001',
+      amount: '1000',
+      subscriberMsisdn: '692000000',
+      description: 'Paiement test OM',
+      PaiementMethod: 'OM_CMR',
+      notifUrl: 'https://mysite.com/notif?token=test-webhook-secret',
+    });
+    expect(calls[1][1].headers.Authorization).toBe('Bearer test-token');
+  });
+
+  it('checks Orange Money payment status on /webpayment/status', async () => {
+    const service = new PaynoteService();
+
+    global.fetch = jest
+      .fn()
+      .mockResolvedValueOnce(tokenResponse('test-token'))
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          ErrorCode: 200,
+          body: 'Pay Request Accepted',
+          parameters: {
+            status: 'SUCCESSFUL',
+            paytoken: 'MP250000123',
+            amount: '1000',
+          },
+        }),
+      }) as unknown as typeof fetch;
+
+    const result = await service.orangePaymentStatus({
+      messageId: 'MP250000123',
+    });
+
+    expect(result).toMatchObject({
+      ErrorCode: 200,
+      parameters: {
+        status: 'SUCCESSFUL',
+      },
+    });
+
+    const calls = (global.fetch as jest.Mock).mock.calls;
+    expect(calls[1][0]).toBe(
+      'https://omapi.ynote.africa/prod/webpayment/status',
+    );
+
+    const statusBody = JSON.parse(calls[1][1].body);
+    expect(statusBody).toMatchObject({
+      customerkey: 'test-customer-key',
+      customersecret: 'test-customer-secret',
+      message_id: 'MP250000123',
+      payment_method: 'OM_CMR',
+    });
+  });
+
+  it('refreshes expired token and retries once on 401 response', async () => {
+    const service = new PaynoteService();
+
+    global.fetch = jest
+      .fn()
+      .mockResolvedValueOnce(tokenResponse('expired-token'))
+      .mockResolvedValueOnce(unauthorizedFaultResponse())
+      .mockResolvedValueOnce(tokenResponse('refreshed-token'))
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          StatusCode: 200,
+          parameters: { MessageId: 'MP250000123' },
+        }),
+      }) as unknown as typeof fetch;
+
+    const result = await service.orangePay({
+      amount: 500,
+      subscriberMsisdn: '692000000',
+      orderId: 'ORD-002',
+      description: 'Test retry',
+    });
+
+    expect(result).toMatchObject({
+      StatusCode: 200,
     });
 
     const calls = (global.fetch as jest.Mock).mock.calls;
     expect(calls[1][1].headers.Authorization).toBe('Bearer expired-token');
-    expect(calls[3][1].headers.Authorization).toBe('Bearer fresh-token');
+    expect(calls[3][1].headers.Authorization).toBe('Bearer refreshed-token');
   });
 
-  it('maps token endpoint failures without exposing raw provider body', async () => {
+  it('handles token endpoint authentication errors cleanly', async () => {
     const service = new PaynoteService();
-    mockFetchOnce({
+
+    global.fetch = jest.fn().mockResolvedValueOnce({
       ok: false,
       status: 401,
       text: async () =>
         '{"fault":{"code":"900901","message":"Invalid Credentials"}}',
-    });
+    }) as unknown as typeof fetch;
 
-    await expect(service.getOrangeAccessToken()).rejects.toMatchObject({
+    await expect(service.getAccessToken()).rejects.toMatchObject({
       message: expect.stringContaining(
-        'Configuration Paynote/Orange invalide ou jeton expire.',
+        'Configuration Paynote invalide ou jeton expire',
       ),
     });
+  });
 
-    mockFetchOnce({
-      ok: false,
-      status: 401,
-      text: async () =>
-        '{"fault":{"code":"900901","message":"Invalid Credentials"}}',
+  it('performs MTN payment with ORANGE/MTN backward compatible envs', async () => {
+    const service = new PaynoteService();
+
+    global.fetch = jest
+      .fn()
+      .mockResolvedValueOnce(tokenResponse('mtn-token'))
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          ErrorCode: 200,
+          parameters: { MessageId: 'MTN-MSG-123' },
+        }),
+      }) as unknown as typeof fetch;
+
+    const result = await service.mtnPay({
+      amount: 2000,
+      subscriberMsisdn: '670000000',
+      orderId: 'ORD-MTN-01',
+      description: 'Paiement MTN',
     });
 
-    try {
-      await service.getOrangeAccessToken();
-    } catch (error) {
-      expect((error as Error).message).not.toContain('Invalid Credentials');
-    }
+    expect(result).toMatchObject({
+      ErrorCode: 200,
+      parameters: { MessageId: 'MTN-MSG-123' },
+    });
+  });
+
+  it('checks MTN status on the dedicated endpoint without Orange fields', async () => {
+    const service = new PaynoteService();
+
+    global.fetch = jest
+      .fn()
+      .mockResolvedValueOnce(tokenResponse('mtn-token'))
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          ErrorCode: 200,
+          parameters: { status: 'SUCCESSFUL', amount: '2000' },
+        }),
+      }) as unknown as typeof fetch;
+
+    await service.mtnPaymentStatus({ messageId: 'MTN-MSG-123' });
+
+    const calls = (global.fetch as jest.Mock).mock.calls;
+    expect(calls[1][0]).toBe(
+      'https://omapi.ynote.africa/prod/webpaymentmtn/status',
+    );
+    expect(JSON.parse(calls[1][1].body)).toEqual({
+      customerkey: 'test-customer-key',
+      customersecret: 'test-customer-secret',
+      message_id: 'MTN-MSG-123',
+    });
+  });
+
+  it('keeps Orange and MTN access tokens separated', async () => {
+    delete process.env.PAYNOTE_CLIENT_ID;
+    delete process.env.PAYNOTE_CLIENT_SECRET;
+    process.env.PAYNOTE_ORANGE_CUSTOMER_KEY = 'orange-key';
+    process.env.PAYNOTE_ORANGE_CUSTOMER_SECRET = 'orange-secret';
+    process.env.PAYNOTE_MTN_TOKEN_CLIENT_ID = 'mtn-key';
+    process.env.PAYNOTE_MTN_TOKEN_CLIENT_SECRET = 'mtn-secret';
+    const service = new PaynoteService();
+    global.fetch = jest
+      .fn()
+      .mockResolvedValueOnce(tokenResponse('orange-token'))
+      .mockResolvedValueOnce(
+        tokenResponse('mtn-token'),
+      ) as unknown as typeof fetch;
+
+    await expect(service.getOrangeAccessToken()).resolves.toBe('orange-token');
+    await expect(service.getMutualizedAccessToken()).resolves.toBe('mtn-token');
+
+    expect(global.fetch).toHaveBeenCalledTimes(2);
   });
 });

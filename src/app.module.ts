@@ -29,6 +29,7 @@ import { ActualitesModule } from './actualites/actualites.module';
 import { MavianceTransaction } from './entities/maviance-transaction.entity';
 import { MavianceServiceCache } from './entities/maviance-service-cache.entity';
 import { MavianceModule } from './maviance/maviance.module';
+import { SmsModule } from './sms/sms.module';
 
 @Module({
   imports: [
@@ -70,8 +71,9 @@ import { MavianceModule } from './maviance/maviance.module';
     UsersModule,
     ActualitesModule,
     MavianceModule,
+    SmsModule,
   ],
   controllers: [AppController],
   providers: [AppService],
 })
-export class AppModule {}
+export class AppModule { }

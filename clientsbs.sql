@@ -172,6 +172,7 @@ CREATE TABLE `transaction` (
   `montant_transaction` decimal(15,2) NOT NULL,
   `date_transaction` datetime DEFAULT CURRENT_TIMESTAMP,
   `references` varchar(254) COLLATE utf8mb4_general_ci DEFAULT NULL,
+  `provider_message_id` varchar(128) COLLATE utf8mb4_general_ci DEFAULT NULL,
   `description` text COLLATE utf8mb4_general_ci,
   `statut` enum('complete','annulee','en_attente') COLLATE utf8mb4_general_ci DEFAULT 'complete',
   `type_transaction` enum('versement','retrait') COLLATE utf8mb4_general_ci NOT NULL,
@@ -290,6 +291,8 @@ ALTER TABLE `transaction`
   ADD PRIMARY KEY (`idtransaction`),
   ADD KEY `FK_TRANSACTION_COMPTE` (`idcompte`),
   ADD KEY `FK_TRANSACTION_USER` (`iduser`),
+  ADD UNIQUE KEY `uq_transaction_references` (`references`),
+  ADD UNIQUE KEY `uq_transaction_provider_message_id` (`provider_message_id`),
   ADD KEY `idx_transaction_operateur` (`operateur`),
   ADD KEY `compteImpact` (`idcompteimpact`);
 

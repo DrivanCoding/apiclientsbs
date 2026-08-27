@@ -4,6 +4,8 @@ import {
   IsOptional,
   IsPositive,
   IsString,
+  Matches,
+  MaxLength,
   Min,
 } from 'class-validator';
 
@@ -22,10 +24,13 @@ export class OuvertureCompteDto {
 
   @IsString()
   @IsNotEmpty()
+  @MaxLength(20)
   numero_telephone: string;
 
   @IsOptional()
   @IsString()
+  @MaxLength(80)
+  @Matches(/^[A-Za-z0-9._-]+$/)
   references?: string;
 
   @IsOptional()

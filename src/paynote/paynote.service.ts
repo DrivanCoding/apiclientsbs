@@ -1,40 +1,43 @@
 import { Injectable } from '@nestjs/common';
 
-type TokenResponse = {
+export type TokenResponse = {
   access_token: string;
   token_type?: string;
   scope?: string;
   expires_in: number;
 };
 
-type InitPaymentResponse = {
-  message?: string;
-  data?: { payToken?: string };
-};
-
-type PayRequest = {
-  channelUserMsisdn?: string;
-  pin?: string;
-  notifUrl?: string;
-  amount: string | number;
+export type MutualizedPayRequest = {
   subscriberMsisdn: string;
   orderId: string;
+  amount: string | number;
   description: string;
-  payToken: string;
+  notifUrl?: string;
+  customerKey?: string;
+  customerSecret?: string;
+  paymentMethod?: string;
 };
 
-type PaymentStatusResponse = {
-  message?: string;
-  data?: Record<string, any>;
+export type MutualizedStatusRequest = {
+  messageId: string;
+  paymentMethod?: string;
+  customerKey?: string;
+  customerSecret?: string;
 };
 
-type ProviderFault = {
+export type OrangePayRequest = MutualizedPayRequest;
+export type OrangeStatusRequest = MutualizedStatusRequest;
+
+export type MtnPayRequest = MutualizedPayRequest;
+export type MtnStatusRequest = MutualizedStatusRequest;
+
+export type ProviderFault = {
   code?: string;
   message?: string;
   description?: string;
 };
 
-class PaynoteProviderError extends Error {
+export class PaynoteProviderError extends Error {
   constructor(
     message: string,
     readonly status: number,
@@ -46,169 +49,204 @@ class PaynoteProviderError extends Error {
   }
 }
 
-type MtnPayRequest = {
-  subscriberMsisdn: string;
-  orderId: string;
-  amount: string | number;
-  description: string;
-  notifUrl?: string;
-  customerKey?: string;
-  customerSecret?: string;
-  paymentMethod?: string;
-};
+type PaynoteScope = 'orange' | 'mtn' | 'general';
 
-type MtnStatusRequest = {
-  messageId: string;
-  customerKey?: string;
-  customerSecret?: string;
+type TokenCacheEntry = {
+  token: string | null;
+  expiresAt: number;
+  promise: Promise<string> | null;
 };
 
 @Injectable()
 export class PaynoteService {
-  private orangeCachedToken: string | null = null;
-  private orangeTokenExpiresAt = 0;
-  private orangeTokenPromise: Promise<string> | null = null;
+  private readonly tokenCache = new Map<PaynoteScope, TokenCacheEntry>();
 
-  private mutualizedCachedToken: string | null = null;
-  private mutualizedTokenExpiresAt = 0;
-  private mutualizedTokenPromise: Promise<string> | null = null;
+  private getTokenUrl(scope?: PaynoteScope) {
+    const specific =
+      scope === 'orange'
+        ? process.env.PAYNOTE_ORANGE_TOKEN_URL
+        : scope === 'mtn'
+          ? process.env.PAYNOTE_MTN_TOKEN_URL
+          : undefined;
+    const generic =
+      process.env.PAYNOTE_TOKEN_URL || process.env.PAYNOTE_MUTUALIZED_TOKEN_URL;
+    const chosen =
+      specific ||
+      generic ||
+      process.env.PAYNOTE_ORANGE_TOKEN_URL ||
+      process.env.PAYNOTE_MTN_TOKEN_URL ||
+      'https://omapi-token.ynote.africa/oauth2/token';
 
-  private getTokenUrl() {
-    return (
-      process.env.PAYNOTE_ORANGE_TOKEN_URL || 'https://api-s1.orange.cm/token'
-    );
+    // Si une ancienne URL directe WSO2 Orange était renseignée, basculer automatiquement sur Paynote unifié
+    if (chosen.includes('api-s1.orange.cm')) {
+      return 'https://omapi-token.ynote.africa/oauth2/token';
+    }
+    return chosen;
   }
 
-  private getCredentials() {
-    const key = process.env.PAYNOTE_ORANGE_CUSTOMER_KEY || '';
-    const secret = process.env.PAYNOTE_ORANGE_CUSTOMER_SECRET || '';
+  private getCredentials(scope?: PaynoteScope) {
+    const key =
+      process.env.PAYNOTE_CLIENT_ID ||
+      process.env.PAYNOTE_CUSTOMER_KEY ||
+      (scope === 'orange'
+        ? process.env.PAYNOTE_ORANGE_CUSTOMER_KEY
+        : undefined) ||
+      (scope === 'mtn'
+        ? process.env.PAYNOTE_MTN_TOKEN_CLIENT_ID ||
+          process.env.PAYNOTE_MTN_CUSTOMER_KEY
+        : undefined) ||
+      process.env.PAYNOTE_MUTUALIZED_CLIENT_ID ||
+      process.env.PAYNOTE_MTN_TOKEN_CLIENT_ID ||
+      process.env.PAYNOTE_ORANGE_CUSTOMER_KEY ||
+      process.env.PAYNOTE_MTN_CUSTOMER_KEY ||
+      '';
+
+    const secret =
+      process.env.PAYNOTE_CLIENT_SECRET ||
+      process.env.PAYNOTE_CUSTOMER_SECRET ||
+      (scope === 'orange'
+        ? process.env.PAYNOTE_ORANGE_CUSTOMER_SECRET
+        : undefined) ||
+      (scope === 'mtn'
+        ? process.env.PAYNOTE_MTN_TOKEN_CLIENT_SECRET ||
+          process.env.PAYNOTE_MTN_CUSTOMER_SECRET
+        : undefined) ||
+      process.env.PAYNOTE_MUTUALIZED_CLIENT_SECRET ||
+      process.env.PAYNOTE_MTN_TOKEN_CLIENT_SECRET ||
+      process.env.PAYNOTE_ORANGE_CUSTOMER_SECRET ||
+      process.env.PAYNOTE_MTN_CUSTOMER_SECRET ||
+      '';
+
     return { key, secret };
   }
 
-  private getTimeoutMs() {
-    const raw = Number(
-      process.env.PAYNOTE_TIMEOUT_MS ||
-        process.env.PAYNOTE_ORANGE_TIMEOUT_MS ||
-        90000,
-    );
+  private getTimeoutMs(scope: PaynoteScope = 'general') {
+    const specific =
+      scope === 'orange'
+        ? process.env.PAYNOTE_ORANGE_TIMEOUT_MS
+        : scope === 'mtn'
+          ? process.env.PAYNOTE_MTN_TIMEOUT_MS
+          : undefined;
+    const raw = Number(specific || process.env.PAYNOTE_TIMEOUT_MS || 90000);
     return Number.isFinite(raw) && raw > 0 ? raw : 90000;
   }
 
-  private getApiBase() {
-    return process.env.PAYNOTE_ORANGE_API_BASE || 'https://api-s1.orange.cm';
+  private getApiBase(scope?: PaynoteScope) {
+    const specific =
+      scope === 'orange'
+        ? process.env.PAYNOTE_ORANGE_API_BASE
+        : scope === 'mtn'
+          ? process.env.PAYNOTE_MTN_API_BASE
+          : undefined;
+    const generic =
+      process.env.PAYNOTE_API_BASE || process.env.PAYNOTE_MUTUALIZED_API_BASE;
+    const chosen =
+      specific ||
+      generic ||
+      process.env.PAYNOTE_ORANGE_API_BASE ||
+      process.env.PAYNOTE_MTN_API_BASE ||
+      'https://omapi.ynote.africa/prod';
+
+    // Si une ancienne URL directe WSO2 Orange était renseignée, basculer automatiquement sur Paynote unifié
+    if (chosen.includes('api-s1.orange.cm')) {
+      return 'https://omapi.ynote.africa/prod';
+    }
+    return chosen;
   }
 
-  private getMtnApiBase() {
+  private getCustomerKey(scope?: PaynoteScope) {
     return (
-      process.env.PAYNOTE_MTN_API_BASE || 'https://omapi.ynote.africa/prod'
-    );
-  }
-
-  private getMutualizedTokenUrl() {
-    return (
-      process.env.PAYNOTE_MTN_TOKEN_URL ||
-      process.env.PAYNOTE_MUTUALIZED_TOKEN_URL ||
-      'https://omapi-token.ynote.africa/oauth2/token'
-    );
-  }
-
-  private getMutualizedCredentials() {
-    const key =
-      process.env.PAYNOTE_MTN_TOKEN_CLIENT_ID ||
-      process.env.PAYNOTE_MUTUALIZED_CLIENT_ID ||
+      process.env.PAYNOTE_CUSTOMER_KEY ||
+      process.env.PAYNOTE_CLIENT_ID ||
+      (scope === 'orange'
+        ? process.env.PAYNOTE_ORANGE_CUSTOMER_KEY
+        : undefined) ||
+      (scope === 'mtn' ? process.env.PAYNOTE_MTN_CUSTOMER_KEY : undefined) ||
+      process.env.PAYNOTE_ORANGE_CUSTOMER_KEY ||
       process.env.PAYNOTE_MTN_CUSTOMER_KEY ||
-      '';
-    const secret =
-      process.env.PAYNOTE_MTN_TOKEN_CLIENT_SECRET ||
-      process.env.PAYNOTE_MUTUALIZED_CLIENT_SECRET ||
-      process.env.PAYNOTE_MTN_CUSTOMER_SECRET ||
-      '';
-    return { key, secret };
-  }
-
-  private getXAuthToken() {
-    return process.env.PAYNOTE_ORANGE_X_AUTH_TOKEN || '';
-  }
-
-  private getChannelMsisdn() {
-    return process.env.PAYNOTE_ORANGE_CHANNEL_MSISDN || '';
-  }
-
-  private getChannelPin() {
-    return process.env.PAYNOTE_ORANGE_PIN || '';
-  }
-
-  private getNotifUrl() {
-    return process.env.PAYNOTE_ORANGE_NOTIF_URL || '';
-  }
-
-  private getMtnCustomerKey() {
-    return process.env.PAYNOTE_MTN_CUSTOMER_KEY || '';
-  }
-
-  private getMtnCustomerSecret() {
-    return process.env.PAYNOTE_MTN_CUSTOMER_SECRET || '';
-  }
-
-  private getMtnNotifUrl() {
-    return process.env.PAYNOTE_MTN_NOTIF_URL || '';
-  }
-
-  private isOrangeTokenValid() {
-    return this.orangeCachedToken && Date.now() < this.orangeTokenExpiresAt;
-  }
-
-  private isMutualizedTokenValid() {
-    return (
-      this.mutualizedCachedToken && Date.now() < this.mutualizedTokenExpiresAt
+      ''
     );
+  }
+
+  private getCustomerSecret(scope?: PaynoteScope) {
+    return (
+      process.env.PAYNOTE_CUSTOMER_SECRET ||
+      process.env.PAYNOTE_CLIENT_SECRET ||
+      (scope === 'orange'
+        ? process.env.PAYNOTE_ORANGE_CUSTOMER_SECRET
+        : undefined) ||
+      (scope === 'mtn' ? process.env.PAYNOTE_MTN_CUSTOMER_SECRET : undefined) ||
+      process.env.PAYNOTE_ORANGE_CUSTOMER_SECRET ||
+      process.env.PAYNOTE_MTN_CUSTOMER_SECRET ||
+      ''
+    );
+  }
+
+  private getNotifUrl(scope?: PaynoteScope) {
+    return (
+      process.env.PAYNOTE_NOTIF_URL ||
+      (scope === 'orange' ? process.env.PAYNOTE_ORANGE_NOTIF_URL : undefined) ||
+      (scope === 'mtn' ? process.env.PAYNOTE_MTN_NOTIF_URL : undefined) ||
+      process.env.PAYNOTE_ORANGE_NOTIF_URL ||
+      process.env.PAYNOTE_MTN_NOTIF_URL ||
+      ''
+    );
+  }
+
+  private getTokenEntry(scope: PaynoteScope): TokenCacheEntry {
+    return (
+      this.tokenCache.get(scope) || {
+        token: null,
+        expiresAt: 0,
+        promise: null,
+      }
+    );
+  }
+
+  private isTokenValid(entry: TokenCacheEntry) {
+    return Boolean(entry.token) && Date.now() < entry.expiresAt;
+  }
+
+  async getAccessToken(scope: PaynoteScope = 'general'): Promise<string> {
+    const entry = this.getTokenEntry(scope);
+    if (this.isTokenValid(entry) && entry.token) return entry.token;
+    if (entry.promise !== null) return entry.promise;
+
+    const promise = this.fetchAccessToken(scope, {
+      tokenUrl: this.getTokenUrl(scope),
+      credentials: this.getCredentials(scope),
+    }).finally(() => {
+      const current = this.getTokenEntry(scope);
+      this.tokenCache.set(scope, { ...current, promise: null });
+    });
+    this.tokenCache.set(scope, { ...entry, promise });
+
+    return promise;
   }
 
   async getOrangeAccessToken(): Promise<string> {
-    if (this.isOrangeTokenValid()) return this.orangeCachedToken as string;
-    if (this.orangeTokenPromise) return this.orangeTokenPromise;
-    this.orangeTokenPromise = this.fetchAccessToken({
-      tokenUrl: this.getTokenUrl(),
-      credentials: this.getCredentials(),
-      cache: 'orange',
-    }).finally(() => {
-      this.orangeTokenPromise = null;
-    });
-    return this.orangeTokenPromise;
-  }
-
-  private clearOrangeAccessToken() {
-    this.orangeCachedToken = null;
-    this.orangeTokenExpiresAt = 0;
-    this.orangeTokenPromise = null;
+    return this.getAccessToken('orange');
   }
 
   async getMutualizedAccessToken(): Promise<string> {
-    if (this.isMutualizedTokenValid())
-      return this.mutualizedCachedToken as string;
-    if (this.mutualizedTokenPromise) return this.mutualizedTokenPromise;
-    this.mutualizedTokenPromise = this.fetchAccessToken({
-      tokenUrl: this.getMutualizedTokenUrl(),
-      credentials: this.getMutualizedCredentials(),
-      cache: 'mutualized',
-    }).finally(() => {
-      this.mutualizedTokenPromise = null;
-    });
-    return this.mutualizedTokenPromise;
+    return this.getAccessToken('mtn');
   }
 
-  private async fetchAccessToken(params: {
-    tokenUrl: string;
-    credentials: { key: string; secret: string };
-    cache: 'orange' | 'mutualized';
-  }): Promise<string> {
+  private clearAccessToken(scope: PaynoteScope) {
+    this.tokenCache.delete(scope);
+  }
+
+  private async fetchAccessToken(
+    scope: PaynoteScope,
+    params: {
+      tokenUrl: string;
+      credentials: { key: string; secret: string };
+    },
+  ): Promise<string> {
     const { key, secret } = params.credentials;
     if (!key || !secret) {
-      if (params.cache === 'orange') {
-        throw new Error('PAYNOTE_ORANGE_CUSTOMER_KEY/SECRET manquants');
-      }
       throw new Error(
-        'PAYNOTE_MTN_TOKEN_CLIENT_ID/SECRET manquants (ou fallback PAYNOTE_MTN_CUSTOMER_KEY/SECRET)',
+        'Identifiants Paynote manquants (PAYNOTE_CLIENT_ID/SECRET ou PAYNOTE_CUSTOMER_KEY/SECRET)',
       );
     }
 
@@ -217,7 +255,8 @@ export class PaynoteService {
     formData.set('grant_type', 'client_credentials');
 
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), this.getTimeoutMs());
+    const timeoutMs = this.getTimeoutMs(scope);
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
     try {
       const res = await fetch(params.tokenUrl, {
@@ -237,22 +276,22 @@ export class PaynoteService {
       if (!data?.access_token) {
         throw new Error('Paynote token response invalide');
       }
+      const expiresInMs = Math.max(1, Number(data.expires_in || 0)) * 1000;
       const ttlMs = Math.max(
-        Number(data.expires_in || 0) * 1000 - 30_000,
-        60_000,
+        1_000,
+        expiresInMs - Math.min(30_000, expiresInMs / 10),
       );
-      if (params.cache === 'orange') {
-        this.orangeCachedToken = data.access_token;
-        this.orangeTokenExpiresAt = Date.now() + ttlMs;
-      } else {
-        this.mutualizedCachedToken = data.access_token;
-        this.mutualizedTokenExpiresAt = Date.now() + ttlMs;
-      }
+      const current = this.getTokenEntry(scope);
+      this.tokenCache.set(scope, {
+        ...current,
+        token: data.access_token,
+        expiresAt: Date.now() + ttlMs,
+      });
       return data.access_token;
     } catch (error) {
       if (error instanceof Error && error.name === 'AbortError') {
         throw new Error(
-          `Paynote token timeout (${params.tokenUrl}) apres ${this.getTimeoutMs()}ms`,
+          `Paynote token timeout (${params.tokenUrl}) apres ${timeoutMs}ms`,
         );
       }
       if (error instanceof PaynoteProviderError) {
@@ -268,40 +307,36 @@ export class PaynoteService {
     }
   }
 
-  private async fetchJson(path: string, init: RequestInit) {
-    return this.fetchJsonFrom(this.getApiBase(), path, init);
-  }
-
-  private async fetchOrangeJsonWithFreshToken(
+  private async fetchJsonWithFreshToken(
+    baseUrl: string,
     path: string,
-    buildInit: (token: string, xAuth: string) => RequestInit,
+    buildInit: (token: string) => RequestInit,
+    scope: PaynoteScope = 'general',
   ) {
-    const xAuth = this.getXAuthToken();
-    if (!xAuth) throw new Error('PAYNOTE_ORANGE_X_AUTH_TOKEN manquant');
-
     for (let attempt = 0; attempt < 2; attempt++) {
-      const token = await this.getOrangeAccessToken();
+      const token = await this.getAccessToken(scope);
       try {
-        return await this.fetchJson(path, buildInit(token, xAuth));
+        return await this.fetchJsonFrom(baseUrl, path, buildInit(token), scope);
       } catch (error) {
-        if (attempt === 0 && this.isInvalidOrangeTokenError(error)) {
-          this.clearOrangeAccessToken();
+        if (attempt === 0 && this.isInvalidTokenError(error)) {
+          this.clearAccessToken(scope);
           continue;
         }
         throw error;
       }
     }
-
-    throw new Error('Paynote Orange retry epuise');
+    throw new Error('Paynote retry epuise');
   }
 
   private async fetchJsonFrom(
     baseUrl: string,
     path: string,
     init: RequestInit,
-  ) {
+    scope: PaynoteScope,
+  ): Promise<Record<string, unknown>> {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), this.getTimeoutMs());
+    const timeoutMs = this.getTimeoutMs(scope);
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
     try {
       const url = `${baseUrl}${path}`;
       const res = await fetch(url, {
@@ -312,11 +347,14 @@ export class PaynoteService {
         const text = await res.text().catch(() => '');
         throw this.providerError(path, res.status, text);
       }
-      return res.json().catch(() => ({}));
+      const payload: unknown = await res.json().catch(() => ({}));
+      return payload && typeof payload === 'object'
+        ? (payload as Record<string, unknown>)
+        : {};
     } catch (error) {
       if (error instanceof Error && error.name === 'AbortError') {
         throw new Error(
-          `Paynote timeout (${baseUrl}${path}) apres ${this.getTimeoutMs()}ms`,
+          `Paynote timeout (${baseUrl}${path}) apres ${timeoutMs}ms`,
         );
       }
       if (error instanceof PaynoteProviderError) {
@@ -342,7 +380,7 @@ export class PaynoteService {
 
     if (status === 401 || code === '900901') {
       return new PaynoteProviderError(
-        'Configuration Paynote/Orange invalide ou jeton expire. Verifiez customerKey/customerSecret, X-AUTH-TOKEN et environnement Orange.',
+        'Configuration Paynote invalide ou jeton expire. Verifiez vos identifiants ClientId/ClientSecret ou CustomerKey/CustomerSecret.',
         status,
         operation,
         fault,
@@ -351,7 +389,7 @@ export class PaynoteService {
 
     if (code === '900902') {
       return new PaynoteProviderError(
-        'Identifiants Paynote/Orange manquants. Verifiez les headers Authorization et X-AUTH-TOKEN.',
+        'Identifiants Paynote manquants. Verifiez le header Authorization.',
         status,
         operation,
         fault,
@@ -365,7 +403,7 @@ export class PaynoteService {
         : '';
 
     return new PaynoteProviderError(
-      `Service Paynote/Orange indisponible (HTTP ${status}).${suffix}`,
+      `Service Paynote indisponible (HTTP ${status}).${suffix}`,
       status,
       operation,
       fault,
@@ -410,9 +448,13 @@ export class PaynoteService {
         : record;
 
     return {
-      code: this.stringValue(source.code),
-      message: this.stringValue(source.message),
-      description: this.stringValue(source.description),
+      code: this.stringValue(
+        source.code || source.ErrorCode || source.StatusCode,
+      ),
+      message: this.stringValue(
+        source.message || source.ErrorMessage || source.body,
+      ),
+      description: this.stringValue(source.description || source.Reason),
     };
   }
 
@@ -429,87 +471,117 @@ export class PaynoteService {
     return undefined;
   }
 
-  private isInvalidOrangeTokenError(error: unknown): boolean {
+  private isInvalidTokenError(error: unknown): boolean {
     if (!(error instanceof PaynoteProviderError)) return false;
     const code = String(error.fault.code || '').trim();
     return error.status === 401 || code === '900901' || code === '900902';
   }
 
-  async initPayment(): Promise<InitPaymentResponse> {
-    return this.fetchOrangeJsonWithFreshToken(
-      '/omcoreapis/1.0.2/mp/init',
-      (token, xAuth) => ({
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'X-AUTH-TOKEN': xAuth,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({}),
-      }),
-    ) as Promise<InitPaymentResponse>;
+  private getPaymentMethod(scope: PaynoteScope) {
+    if (scope === 'orange') {
+      return process.env.PAYNOTE_ORANGE_PAYMENT_METHOD || 'OM_CMR';
+    }
+    if (scope === 'mtn') {
+      return process.env.PAYNOTE_MTN_PAYMENT_METHOD || 'MTN_CMR';
+    }
+    return process.env.PAYNOTE_PAYMENT_METHOD || 'OM_CMR';
   }
 
-  async pay(request: PayRequest): Promise<PaymentStatusResponse> {
-    const channelUserMsisdn =
-      request.channelUserMsisdn || this.getChannelMsisdn();
-    const pin = request.pin || this.getChannelPin();
-    const notifUrl = request.notifUrl || this.getNotifUrl();
-    if (!channelUserMsisdn)
-      throw new Error('PAYNOTE_ORANGE_CHANNEL_MSISDN manquant');
-    if (!pin) throw new Error('PAYNOTE_ORANGE_PIN manquant');
-    if (!notifUrl) throw new Error('PAYNOTE_ORANGE_NOTIF_URL manquant');
-
-    const payload = {
-      notifUrl,
-      channelUserMsisdn,
-      amount: String(request.amount),
-      subscriberMsisdn: request.subscriberMsisdn,
-      pin,
-      orderId: request.orderId,
-      description: request.description,
-      payToken: request.payToken,
-    };
-
-    return this.fetchOrangeJsonWithFreshToken(
-      '/omcoreapis/1.0.2/mp/pay',
-      (token, xAuth) => ({
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'X-AUTH-TOKEN': xAuth,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(payload),
-      }),
-    ) as Promise<PaymentStatusResponse>;
+  private getStatusPath(scope: PaynoteScope) {
+    const configured =
+      scope === 'mtn'
+        ? process.env.PAYNOTE_MTN_STATUS_PATH
+        : scope === 'orange'
+          ? process.env.PAYNOTE_ORANGE_STATUS_PATH
+          : process.env.PAYNOTE_STATUS_PATH;
+    return (
+      configured ||
+      (scope === 'mtn' ? '/webpaymentmtn/status' : '/webpayment/status')
+    );
   }
 
-  async getPaymentStatus(payToken: string): Promise<PaymentStatusResponse> {
-    const safeToken = encodeURIComponent(String(payToken || '').trim());
-    if (!safeToken) throw new Error('payToken requis');
-    return this.fetchOrangeJsonWithFreshToken(
-      `/omcoreapis/1.0.2/mp/paymentstatus/${safeToken}`,
-      (token, xAuth) => ({
-        method: 'GET',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'X-AUTH-TOKEN': xAuth,
-        },
-      }),
-    ) as Promise<PaymentStatusResponse>;
+  private normalizeSubscriberMsisdn(value: string) {
+    let digits = String(value || '').replace(/\D/g, '');
+    if (digits.startsWith('237')) digits = digits.slice(3);
+    if (!/^6\d{8}$/.test(digits)) {
+      throw new Error(
+        'Numero de paiement invalide. Utilisez un numero camerounais de 9 chiffres commencant par 6.',
+      );
+    }
+    return digits;
   }
 
-  async mtnPay(request: MtnPayRequest): Promise<Record<string, any>> {
-    const token = await this.getMutualizedAccessToken();
-    const customerKey = request.customerKey || this.getMtnCustomerKey();
+  private validateAmount(value: string | number, scope: PaynoteScope) {
+    const amount = Number(value);
+    const min = Number(
+      scope === 'orange'
+        ? process.env.PAYNOTE_ORANGE_MIN_AMOUNT || 10
+        : process.env.PAYNOTE_MTN_MIN_AMOUNT || 10,
+    );
+    const max = Number(
+      scope === 'orange'
+        ? process.env.PAYNOTE_ORANGE_MAX_AMOUNT || 500000
+        : process.env.PAYNOTE_MTN_MAX_AMOUNT || 500000,
+    );
+    if (!Number.isSafeInteger(amount) || amount < min || amount > max) {
+      throw new Error(
+        `Montant Paynote invalide. Le montant doit etre un entier compris entre ${min} et ${max} XAF.`,
+      );
+    }
+    return String(amount);
+  }
+
+  private validateNotifUrl(value: string) {
+    let url: URL;
+    try {
+      url = new URL(value);
+    } catch {
+      throw new Error('PAYNOTE_NOTIF_URL invalide');
+    }
+    if (
+      url.hostname === 'example.com' ||
+      url.hostname.endsWith('.example.com')
+    ) {
+      throw new Error(
+        'PAYNOTE_NOTIF_URL doit pointer vers le webhook public SBSClient',
+      );
+    }
+    if (
+      url.protocol !== 'https:' &&
+      !['localhost', '127.0.0.1'].includes(url.hostname)
+    ) {
+      throw new Error('PAYNOTE_NOTIF_URL doit utiliser HTTPS');
+    }
+    const webhookSecret = String(
+      process.env.PAYNOTE_WEBHOOK_SECRET || '',
+    ).trim();
+    if (!webhookSecret) {
+      throw new Error('PAYNOTE_WEBHOOK_SECRET manquant');
+    }
+    url.searchParams.set('token', webhookSecret);
+    return url.toString();
+  }
+
+  async mutualizedPay(
+    request: MutualizedPayRequest,
+    scope: PaynoteScope = 'general',
+  ): Promise<Record<string, any>> {
+    const customerKey = request.customerKey || this.getCustomerKey(scope);
     const customerSecret =
-      request.customerSecret || this.getMtnCustomerSecret();
-    const notifUrl = request.notifUrl || this.getMtnNotifUrl();
-    if (!customerKey) throw new Error('PAYNOTE_MTN_CUSTOMER_KEY manquant');
-    if (!customerSecret)
-      throw new Error('PAYNOTE_MTN_CUSTOMER_SECRET manquant');
-    if (!notifUrl) throw new Error('PAYNOTE_MTN_NOTIF_URL manquant');
+      request.customerSecret || this.getCustomerSecret(scope);
+    const rawNotifUrl = request.notifUrl || this.getNotifUrl(scope);
+
+    if (!customerKey) throw new Error('PAYNOTE_CUSTOMER_KEY manquant');
+    if (!customerSecret) throw new Error('PAYNOTE_CUSTOMER_SECRET manquant');
+    if (!rawNotifUrl) throw new Error('PAYNOTE_NOTIF_URL manquant');
+
+    const notifUrl = this.validateNotifUrl(rawNotifUrl);
+    const amount = this.validateAmount(request.amount, scope);
+    const subscriberMsisdn = this.normalizeSubscriberMsisdn(
+      request.subscriberMsisdn,
+    );
+
+    const paymentMethod = request.paymentMethod || this.getPaymentMethod(scope);
 
     const payload = {
       API_MUT: {
@@ -517,49 +589,107 @@ export class PaynoteService {
         customersecret: customerSecret,
         order_id: request.orderId,
         description: request.description,
-        amount: String(request.amount),
-        subscriberMsisdn: request.subscriberMsisdn,
+        amount,
+        subscriberMsisdn,
         notifUrl,
-        PaiementMethod: request.paymentMethod || 'MTN_CMR',
+        PaiementMethod: paymentMethod,
       },
     };
 
-    return this.fetchJsonFrom(this.getMtnApiBase(), '/webpayment', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json',
+    const baseUrl = this.getApiBase(scope);
+    return this.fetchJsonWithFreshToken(
+      baseUrl,
+      '/webpayment',
+      (token) => ({
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      }),
+      scope,
+    );
+  }
+
+  async mutualizedPaymentStatus(
+    request: MutualizedStatusRequest,
+    scope: PaynoteScope = 'general',
+  ): Promise<Record<string, any>> {
+    const customerKey = request.customerKey || this.getCustomerKey(scope);
+    const customerSecret =
+      request.customerSecret || this.getCustomerSecret(scope);
+
+    if (!customerKey) throw new Error('PAYNOTE_CUSTOMER_KEY manquant');
+    if (!customerSecret) throw new Error('PAYNOTE_CUSTOMER_SECRET manquant');
+
+    const messageId = String(request.messageId || '').trim();
+    if (!messageId) throw new Error('message_id requis');
+
+    const paymentMethod = request.paymentMethod || this.getPaymentMethod(scope);
+
+    const statusPath = this.getStatusPath(scope);
+
+    const payload: Record<string, string> = {
+      customerkey: customerKey,
+      customersecret: customerSecret,
+      message_id: messageId,
+    };
+    if (statusPath === '/webpayment/status') {
+      payload.payment_method = paymentMethod;
+    }
+
+    const baseUrl = this.getApiBase(scope);
+    return this.fetchJsonWithFreshToken(
+      baseUrl,
+      statusPath,
+      (token) => ({
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      }),
+      scope,
+    );
+  }
+
+  async orangePay(request: OrangePayRequest): Promise<Record<string, any>> {
+    return this.mutualizedPay(
+      { ...request, paymentMethod: this.getPaymentMethod('orange') },
+      'orange',
+    );
+  }
+
+  async orangePaymentStatus(
+    request: OrangeStatusRequest,
+  ): Promise<Record<string, any>> {
+    return this.mutualizedPaymentStatus(
+      { ...request, paymentMethod: this.getPaymentMethod('orange') },
+      'orange',
+    );
+  }
+
+  async mtnPay(request: MtnPayRequest): Promise<Record<string, any>> {
+    return this.mutualizedPay(
+      {
+        ...request,
+        paymentMethod: request.paymentMethod || this.getPaymentMethod('mtn'),
       },
-      body: JSON.stringify(payload),
-    });
+      'mtn',
+    );
   }
 
   async mtnPaymentStatus(
     request: MtnStatusRequest,
   ): Promise<Record<string, any>> {
-    const token = await this.getMutualizedAccessToken();
-    const customerKey = request.customerKey || this.getMtnCustomerKey();
-    const customerSecret =
-      request.customerSecret || this.getMtnCustomerSecret();
-    if (!customerKey) throw new Error('PAYNOTE_MTN_CUSTOMER_KEY manquant');
-    if (!customerSecret)
-      throw new Error('PAYNOTE_MTN_CUSTOMER_SECRET manquant');
-    const messageId = String(request.messageId || '').trim();
-    if (!messageId) throw new Error('message_id requis');
-
-    const payload = {
-      customerkey: customerKey,
-      customersecret: customerSecret,
-      message_id: messageId,
-    };
-
-    return this.fetchJsonFrom(this.getMtnApiBase(), '/webpaymentmtn/status', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json',
+    return this.mutualizedPaymentStatus(
+      {
+        ...request,
+        paymentMethod: request.paymentMethod || this.getPaymentMethod('mtn'),
       },
-      body: JSON.stringify(payload),
-    });
+      'mtn',
+    );
   }
 }

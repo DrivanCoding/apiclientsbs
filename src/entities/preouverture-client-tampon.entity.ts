@@ -56,8 +56,11 @@ export class PreouvertureClientTampon {
   @Column({ length: 20 })
   operateur: string;
 
-  @Column({ length: 120 })
+  @Column({ length: 120, unique: true })
   references: string;
+
+  @Column({ length: 128, nullable: true, unique: true })
+  provider_message_id?: string;
 
   @Column({ type: 'text', nullable: true })
   description?: string;
