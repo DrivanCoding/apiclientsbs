@@ -693,7 +693,7 @@ export class TransactionsService {
         email: normalizedEmail,
         telephone_principal: dto.telephone_principal.trim(),
         numero_telephone: numeroOperation,
-        mot_de_passe: dto.mot_de_passe,
+        mot_de_passe: dto.mot_de_passe?.trim() || undefined,
         type_piece: this.normalizePieceIdentite(dto.type_piece),
         num_piece_identite:
           dto.num_piece_identite?.trim() || `TMP-${Date.now()}`,

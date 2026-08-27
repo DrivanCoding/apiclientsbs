@@ -12,7 +12,7 @@ export class EnsureTamponTables1780405200000 implements MigrationInterface {
         \`email\` varchar(100) DEFAULT NULL,
         \`telephone_principal\` varchar(20) NOT NULL,
         \`numero_telephone\` varchar(20) DEFAULT NULL,
-        \`mot_de_passe\` varchar(255) NOT NULL,
+        \`mot_de_passe\` varchar(255) DEFAULT NULL,
         \`type_piece\` varchar(50) DEFAULT NULL,
         \`num_piece_identite\` varchar(50) DEFAULT NULL,
         \`adresse\` varchar(255) DEFAULT NULL,
