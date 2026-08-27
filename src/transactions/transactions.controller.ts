@@ -37,15 +37,28 @@ function ensurePreouvertureUploadDir() {
   }
 }
 
-function imageFileFilter(
+function mediaFileFilter(
   _req: unknown,
   file: { mimetype: string },
   callback: (error: Error | null, acceptFile: boolean) => void,
 ) {
-  if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.mimetype)) {
+  const acceptedMimeTypes = [
+    'image/jpeg',
+    'image/png',
+    'image/webp',
+    'video/mp4',
+    'video/quicktime',
+    'video/x-msvideo',
+    'video/webm',
+    'video/3gpp',
+    'video/3gpp2',
+    'video/mpeg',
+    'video/x-m4v',
+  ];
+  if (!acceptedMimeTypes.includes(file.mimetype)) {
     return callback(
       new BadRequestException(
-        'Les documents doivent etre des images JPG, PNG ou WebP.',
+        'Les documents doivent etre des images ou videos compatibles.',
       ),
       false,
     );
@@ -148,8 +161,8 @@ export class TransactionsController {
             );
           },
         }),
-        fileFilter: imageFileFilter,
-        limits: { fileSize: 5 * 1024 * 1024 },
+        fileFilter: mediaFileFilter,
+        limits: { fileSize: 50 * 1024 * 1024 },
       },
     ),
   )

@@ -19,8 +19,9 @@ export class PreouvertureDto {
   @IsString()
   prenom?: string;
 
+  @IsOptional()
   @IsEmail()
-  email: string;
+  email?: string;
 
   @IsString()
   @IsNotEmpty()

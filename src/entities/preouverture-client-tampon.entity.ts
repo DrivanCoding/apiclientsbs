@@ -11,8 +11,8 @@ export class PreouvertureClientTampon {
   @Column({ length: 50, nullable: true })
   prenom?: string;
 
-  @Column({ length: 100 })
-  email: string;
+  @Column({ length: 100, nullable: true })
+  email?: string;
 
   @Column({ length: 20 })
   telephone_principal: string;

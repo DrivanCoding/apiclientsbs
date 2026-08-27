@@ -630,19 +630,19 @@ export class TransactionsService {
 
     if (!photoProfil || !signature) {
       this.logger.warn(
-        `Pre-ouverture sans images requises: profil=${Boolean(
+        `Pre-ouverture sans fichiers requis: profil=${Boolean(
           photoProfil,
         )}, signature=${Boolean(signature)}`,
       );
       throw new BadRequestException(
-        'La photo de profil et la signature sont obligatoires.',
+        'Le fichier de profil et la signature sont obligatoires.',
       );
     }
 
     if (dto.type_piece && (!photoPieceRecto || !photoPieceVerso)) {
       this.logger.warn('Pre-ouverture avec piece sans recto/verso');
       throw new BadRequestException(
-        'Les images CNI/Passport recto et verso sont obligatoires.',
+        'Les fichiers CNI/Passport recto et verso sont obligatoires.',
       );
     }
 
@@ -662,13 +662,15 @@ export class TransactionsService {
     const description =
       dto.description?.trim() ||
       `Depot initial ${normalizedOperator.toUpperCase()} - ${numeroOperation}`;
+    const normalizedEmail = dto.email?.trim().toLowerCase() || undefined;
 
     const existing = await this.preouvertureTamponRepository.findOne({
       where: { references },
     });
     if (existing) {
       if (
-        existing.email !== dto.email.trim().toLowerCase() ||
+        (existing.email?.trim().toLowerCase() || undefined) !==
+          normalizedEmail ||
         Number(existing.montant_initial) !== dto.montant_initial ||
         existing.operateur !== normalizedOperator
       ) {
@@ -688,7 +690,7 @@ export class TransactionsService {
       this.preouvertureTamponRepository.create({
         nom: dto.nom.trim().toUpperCase(),
         prenom: dto.prenom?.trim(),
-        email: dto.email.trim().toLowerCase(),
+        email: normalizedEmail,
         telephone_principal: dto.telephone_principal.trim(),
         numero_telephone: numeroOperation,
         mot_de_passe: dto.mot_de_passe,
@@ -724,7 +726,7 @@ export class TransactionsService {
         montant: dto.montant_initial,
         references,
         description,
-        customerEmail: dto.email,
+        customerEmail: normalizedEmail,
         customerName: [dto.prenom, dto.nom].filter(Boolean).join(' '),
         customerAddress: dto.adresse,
         onProviderReference: async (messageId) => {
