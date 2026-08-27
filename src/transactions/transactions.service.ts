@@ -630,19 +630,19 @@ export class TransactionsService {
 
     if (!photoProfil || !signature) {
       this.logger.warn(
-        `Pre-ouverture sans fichiers requis: profil=${Boolean(
+        `Pre-ouverture sans images requises: profil=${Boolean(
           photoProfil,
         )}, signature=${Boolean(signature)}`,
       );
       throw new BadRequestException(
-        'Le fichier de profil et la signature sont obligatoires.',
+        'La photo de profil et la signature sont obligatoires.',
       );
     }
 
     if (dto.type_piece && (!photoPieceRecto || !photoPieceVerso)) {
       this.logger.warn('Pre-ouverture avec piece sans recto/verso');
       throw new BadRequestException(
-        'Les fichiers CNI/Passport recto et verso sont obligatoires.',
+        'Les images CNI/Passport recto et verso sont obligatoires.',
       );
     }
 
@@ -690,10 +690,12 @@ export class TransactionsService {
       this.preouvertureTamponRepository.create({
         nom: dto.nom.trim().toUpperCase(),
         prenom: dto.prenom?.trim(),
-        email: normalizedEmail,
+        // Keep compatibility with databases where the nullable-field
+        // migration has not been deployed yet.
+        email: normalizedEmail ?? '',
         telephone_principal: dto.telephone_principal.trim(),
         numero_telephone: numeroOperation,
-        mot_de_passe: dto.mot_de_passe?.trim() || undefined,
+        mot_de_passe: dto.mot_de_passe?.trim() || '',
         type_piece: this.normalizePieceIdentite(dto.type_piece),
         num_piece_identite:
           dto.num_piece_identite?.trim() || `TMP-${Date.now()}`,
