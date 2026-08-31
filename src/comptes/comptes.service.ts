@@ -20,6 +20,10 @@ import { RequestPinOtpDto } from './dto/request-pin-otp.dto';
 import { VerifyComptePinDto } from './dto/verify-compte-pin.dto';
 import { SmsService } from '../sms/sms.service';
 
+export function buildPinOtpMessage(codeClient: string, otpCode: string) {
+  return `Votre code OTP SBS pour configurer le PIN du compte ${codeClient} est: ${otpCode}. Il expire dans 10 minutes.`;
+}
+
 @Injectable()
 export class ComptesService {
   private pinAttemptsMap = new Map<number, number>();
@@ -258,13 +262,9 @@ export class ComptesService {
       consumed_at: null,
     });
 
-    let delivery: { channel: string; message: string };
+    let delivery: { channel: string; message: string; destination: string };
     try {
-      delivery = await this.deliverPinOtp(
-        client,
-        otpCode,
-        payload.idcompte,
-      );
+      delivery = await this.deliverPinOtp(client, otpCode);
     } catch (error) {
       // Un OTP non transmis ne doit pas imposer le delai de renouvellement.
       await this.otpRepository.delete(otpRecord.id);
@@ -274,6 +274,7 @@ export class ComptesService {
     return {
       success: true,
       delivery: delivery.channel,
+      destination: delivery.destination,
       expires_at: expiresAt.toISOString(),
       message: delivery.message,
     };
@@ -421,7 +422,7 @@ export class ComptesService {
   private async sendPinOtpEmail(
     to: string,
     otpCode: string,
-    idcompte: number,
+    codeClient: string,
   ): Promise<'email' | 'console'> {
     const host = process.env.SMTP_HOST?.trim();
     const port = Number(process.env.SMTP_PORT ?? 587);
@@ -435,9 +436,7 @@ export class ComptesService {
     const text = [
       'Bonjour,',
       '',
-      `Votre code OTP est: ${otpCode}`,
-      'Ce code expire dans 10 minutes.',
-      `Compte concerne: #${idcompte}`,
+      buildPinOtpMessage(codeClient, otpCode),
       '',
       "Si vous n'etes pas a l'origine de cette demande, ignorez cet email.",
     ].join('\n');
@@ -447,7 +446,7 @@ export class ComptesService {
         process.env.NODE_ENV === 'development' || !process.env.NODE_ENV;
       const loggedOtp = isDev ? otpCode : '******';
       console.warn(
-        `[PIN-OTP] SMTP non configure. OTP compte #${idcompte} pour ${to}: ${loggedOtp}`,
+        `[PIN-OTP] SMTP non configure. OTP client ${codeClient} pour ${to}: ${loggedOtp}`,
       );
       return 'console';
     }
@@ -468,26 +467,16 @@ export class ComptesService {
     return 'email';
   }
 
-  private async deliverPinOtp(
-    client: Client,
-    otpCode: string,
-    idcompte: number,
-  ) {
+  private async deliverPinOtp(client: Client, otpCode: string) {
     const phone = this.normalizePhone(client.telephone_principal);
     const email = client.email?.trim().toLowerCase();
+    const codeClient = String(client.code_client || '').trim();
+    if (!codeClient) {
+      throw new BadRequestException('Code client introuvable');
+    }
+    const message = buildPinOtpMessage(codeClient, otpCode);
 
     if (phone) {
-      const template = process.env.SMS_OTP_TEMPLATE?.trim();
-      if (!template) {
-        throw new BadRequestException(
-          'Le modele SMS OTP SBSClient n est pas configure',
-        );
-      }
-      const message = this.renderSmsTemplate(template, {
-        otp: otpCode,
-        compte: String(idcompte),
-        expiration: '10',
-      });
       const result = await this.smsService.sendSms(phone, message);
       if (!result.success) {
         throw new BadRequestException(
@@ -496,16 +485,17 @@ export class ComptesService {
       }
       return {
         channel: 'sms',
-        message: 'Un code OTP a ete envoye par SMS',
+        destination: this.maskPhone(phone),
+        message: `Un code OTP a ete envoye par SMS au numero ${this.maskPhone(phone)}. Il expire dans 10 minutes.`,
       };
     }
 
     if (email) {
-      const delivery = await this.sendPinOtpEmail(email, otpCode, idcompte);
+      const delivery = await this.sendPinOtpEmail(email, otpCode, codeClient);
       return {
         channel: delivery,
-        message:
-          'Aucun numero telephone trouve. Le code OTP a ete envoye par email',
+        destination: this.maskEmail(email),
+        message: `Le code OTP a ete envoye a l adresse ${this.maskEmail(email)}. Il expire dans 10 minutes.`,
       };
     }
 
@@ -522,17 +512,15 @@ export class ComptesService {
     return digits;
   }
 
-  private renderSmsTemplate(
-    template: string,
-    values: Record<string, string>,
-  ): string {
-    return Object.entries(values).reduce((message, [key, value]) => {
-      return message
-        .split(`__${key}`)
-        .join(value)
-        .split(`{${key}}`)
-        .join(value);
-    }, template);
+  private maskPhone(phone: string) {
+    const digits = phone.replace(/\D/g, '');
+    return digits.length <= 4 ? '****' : `******${digits.slice(-4)}`;
+  }
+
+  private maskEmail(email: string) {
+    const [localPart, domain] = email.split('@');
+    if (!localPart || !domain) return 'adresse masquee';
+    return `${localPart.charAt(0)}***@${domain}`;
   }
 
   private async hashPin(pin?: string | null) {
