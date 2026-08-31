@@ -170,6 +170,21 @@ export class TransactionsController {
     return this.service.findAll(pageNum, limitNum);
   }
 
+  @Get('me')
+  @UseGuards(JwtAuthGuard)
+  findMine(
+    @Req() req: { user?: { sub?: number; idclient?: number } },
+    @Query('date_debut') dateDebut?: string,
+    @Query('date_fin') dateFin?: string,
+  ) {
+    const idclient = Number(req.user?.idclient || req.user?.sub || 0);
+    if (idclient <= 0) {
+      throw new UnauthorizedException('Client authentifie introuvable');
+    }
+
+    return this.service.findByClient(idclient, dateDebut, dateFin);
+  }
+
   @Get('client/:id')
   @UseGuards(JwtAuthGuard, AdminRoleGuard)
   findByClient(
