@@ -8,7 +8,6 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { IsNull, Not, Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
 import * as nodemailer from 'nodemailer';
-import PDFDocument = require('pdfkit');
 import { randomInt } from 'crypto';
 import { Client } from '../entities/client.entity';
 import { Compte } from '../entities/compte.entity';
@@ -19,6 +18,7 @@ import { ConfirmPinSetupDto } from './dto/confirm-pin-setup.dto';
 import { RequestPinOtpDto } from './dto/request-pin-otp.dto';
 import { VerifyComptePinDto } from './dto/verify-compte-pin.dto';
 import { SmsService } from '../sms/sms.service';
+import { CoreBankingStatementService } from './core-banking-statement.service';
 
 export function buildPinOtpMessage(codeClient: string, otpCode: string) {
   return `Votre code OTP SBS pour configurer le PIN du compte ${codeClient} est: ${otpCode}. Il expire dans 10 minutes.`;
@@ -40,6 +40,7 @@ export class ComptesService {
     @InjectRepository(Typecompte)
     private readonly typeCompteRepository: Repository<Typecompte>,
     private readonly smsService: SmsService,
+    private readonly coreBankingStatementService: CoreBankingStatementService,
   ) {}
 
   private async getClientMasterPin(idclient: number): Promise<string | null> {
@@ -613,60 +614,20 @@ export class ComptesService {
       );
     }
 
-    const [client, typeCompte, transactions] = await Promise.all([
-      this.clientRepository.findOneBy({ idclient }),
-      this.findTypeCompte(compte.idtype),
-      this.transactionRepository.find({
-        where: { idcompte, statut: 'complete' },
-        order: { date_transaction: 'ASC' },
-      }),
-    ]);
-
-    const periodTransactions = transactions.filter((transaction) => {
-      const transactionDate = new Date(transaction.date_transaction);
-      return (
-        (!start || transactionDate >= start) && (!end || transactionDate <= end)
-      );
-    });
-
-    let endBalance = Number(compte.solde || 0);
-    if (end) {
-      for (const transaction of transactions) {
-        if (new Date(transaction.date_transaction) <= end) continue;
-        const amount = Number(transaction.montant_transaction || 0);
-        endBalance +=
-          transaction.type_transaction === 'retrait' ? amount : -amount;
+    if (start && end) {
+      const durationInDays = (end.getTime() - start.getTime()) / 86_400_000;
+      if (durationInDays > 31) {
+        throw new BadRequestException(
+          'La periode ne doit pas depasser 30 jours.',
+        );
       }
     }
 
-    const totalCredits = periodTransactions
-      .filter((transaction) => transaction.type_transaction === 'versement')
-      .reduce(
-        (total, transaction) =>
-          total + Number(transaction.montant_transaction || 0),
-        0,
-      );
-    const totalDebits = periodTransactions
-      .filter((transaction) => transaction.type_transaction === 'retrait')
-      .reduce(
-        (total, transaction) =>
-          total + Number(transaction.montant_transaction || 0),
-        0,
-      );
-    const openingBalance = endBalance - totalCredits + totalDebits;
-
-    return this.renderStatementPdf({
-      compte,
-      client,
-      typeCompte,
-      transactions: periodTransactions,
-      openingBalance,
-      endBalance,
-      totalCredits,
-      totalDebits,
+    return this.coreBankingStatementService.downloadStatement(
+      idcompte,
       dateDebut,
       dateFin,
-    });
+    );
   }
 
   private statementDate(value?: string, endOfDay = false): Date | null {
@@ -686,201 +647,4 @@ export class ComptesService {
     return date;
   }
 
-  private renderStatementPdf(data: {
-    compte: Compte;
-    client: Client | null;
-    typeCompte: Typecompte | null;
-    transactions: Transaction[];
-    openingBalance: number;
-    endBalance: number;
-    totalCredits: number;
-    totalDebits: number;
-    dateDebut?: string;
-    dateFin?: string;
-  }): Promise<Buffer> {
-    return new Promise((resolve, reject) => {
-      const document = new PDFDocument({ size: 'A4', margin: 40 });
-      const chunks: Buffer[] = [];
-      document.on('data', (chunk: Buffer) => chunks.push(chunk));
-      document.on('error', reject);
-      document.on('end', () => resolve(Buffer.concat(chunks)));
-
-      const money = (value: number) =>
-        `${Math.round(value).toLocaleString('fr-FR')} FCFA`;
-      const formatDate = (value: Date) =>
-        new Intl.DateTimeFormat('fr-FR', {
-          dateStyle: 'short',
-          timeStyle: 'short',
-        }).format(new Date(value));
-      const clientName = [data.client?.nom, data.client?.prenom]
-        .filter(Boolean)
-        .join(' ')
-        .trim();
-      const period =
-        data.dateDebut && data.dateFin
-          ? `Du ${data.dateDebut} au ${data.dateFin}`
-          : data.dateDebut
-            ? `Depuis le ${data.dateDebut}`
-            : data.dateFin
-              ? `Jusqu'au ${data.dateFin}`
-              : 'Toutes les dates';
-
-      document
-        .fillColor('#0f4c5c')
-        .font('Helvetica-Bold')
-        .fontSize(20)
-        .text('SBS - RELEVE DE COMPTE', { align: 'center' });
-      document
-        .moveDown(0.4)
-        .fillColor('#333333')
-        .font('Helvetica')
-        .fontSize(9)
-        .text(
-          `Edite le ${new Intl.DateTimeFormat('fr-FR').format(new Date())}`,
-          {
-            align: 'center',
-          },
-        );
-
-      document.moveDown(1.3);
-      const infoTop = document.y;
-      document
-        .font('Helvetica-Bold')
-        .fontSize(10)
-        .text('Titulaire', 40, infoTop)
-        .font('Helvetica')
-        .text(clientName || `Client #${data.compte.idclient}`, 125, infoTop)
-        .font('Helvetica-Bold')
-        .text('Compte', 330, infoTop)
-        .font('Helvetica')
-        .text(data.compte.numero_compte, 400, infoTop);
-      document
-        .font('Helvetica-Bold')
-        .text('Type', 40, infoTop + 18)
-        .font('Helvetica')
-        .text(data.typeCompte?.libelle || '-', 125, infoTop + 18)
-        .font('Helvetica-Bold')
-        .text('Periode', 330, infoTop + 18)
-        .font('Helvetica')
-        .text(period, 400, infoTop + 18, { width: 155 });
-
-      document.y = infoTop + 55;
-      const summaryTop = document.y;
-      const summary = [
-        ['Solde initial', money(data.openingBalance)],
-        ['Total credits', money(data.totalCredits)],
-        ['Total debits', money(data.totalDebits)],
-        ['Solde final', money(data.endBalance)],
-      ];
-      summary.forEach(([label, value], index) => {
-        const x = 40 + index * 129;
-        document
-          .roundedRect(x, summaryTop, 119, 42, 5)
-          .fill(index === 3 ? '#0f4c5c' : '#edf5f6');
-        document
-          .fillColor(index === 3 ? '#ffffff' : '#43515a')
-          .font('Helvetica')
-          .fontSize(8)
-          .text(label, x + 8, summaryTop + 7, { width: 103 });
-        document
-          .font('Helvetica-Bold')
-          .fontSize(9)
-          .text(value, x + 8, summaryTop + 22, { width: 103 });
-      });
-
-      const drawTableHeader = (top: number) => {
-        document.rect(40, top, 515, 22).fill('#0f4c5c');
-        document.fillColor('#ffffff').font('Helvetica-Bold').fontSize(8);
-        document.text('Date', 45, top + 7, { width: 75 });
-        document.text('Operation / reference', 123, top + 7, { width: 195 });
-        document.text('Debit', 322, top + 7, { width: 70, align: 'right' });
-        document.text('Credit', 397, top + 7, { width: 70, align: 'right' });
-        document.text('Solde', 472, top + 7, { width: 78, align: 'right' });
-        return top + 22;
-      };
-
-      document.y = summaryTop + 62;
-      let rowTop = drawTableHeader(document.y);
-      let runningBalance = data.openingBalance;
-
-      if (data.transactions.length === 0) {
-        document
-          .fillColor('#666666')
-          .font('Helvetica-Oblique')
-          .fontSize(9)
-          .text('Aucune operation sur cette periode.', 45, rowTop + 12, {
-            width: 505,
-            align: 'center',
-          });
-        rowTop += 38;
-      }
-
-      data.transactions.forEach((transaction, index) => {
-        if (rowTop > 745) {
-          document.addPage();
-          rowTop = drawTableHeader(40);
-        }
-        const amount = Number(transaction.montant_transaction || 0);
-        const isCredit = transaction.type_transaction === 'versement';
-        runningBalance += isCredit ? amount : -amount;
-        if (index % 2 === 0) {
-          document.rect(40, rowTop, 515, 34).fill('#f7fafb');
-        }
-        document.fillColor('#263238').font('Helvetica').fontSize(7.5);
-        document.text(
-          formatDate(transaction.date_transaction),
-          45,
-          rowTop + 7,
-          {
-            width: 75,
-          },
-        );
-        const operation = [
-          isCredit ? 'Versement' : 'Retrait',
-          transaction.references,
-          transaction.description,
-        ]
-          .filter(Boolean)
-          .join(' - ');
-        document.text(operation, 123, rowTop + 7, {
-          width: 195,
-          height: 22,
-          ellipsis: true,
-        });
-        document.text(isCredit ? '-' : money(amount), 322, rowTop + 7, {
-          width: 70,
-          align: 'right',
-        });
-        document.text(isCredit ? money(amount) : '-', 397, rowTop + 7, {
-          width: 70,
-          align: 'right',
-        });
-        document
-          .font('Helvetica-Bold')
-          .text(money(runningBalance), 472, rowTop + 7, {
-            width: 78,
-            align: 'right',
-          });
-        rowTop += 34;
-      });
-
-      document
-        .moveTo(40, rowTop + 8)
-        .lineTo(555, rowTop + 8)
-        .strokeColor('#9fb8bd')
-        .stroke();
-      document
-        .fillColor('#607d86')
-        .font('Helvetica')
-        .fontSize(8)
-        .text(
-          'Ce document est genere electroniquement par SBS.',
-          40,
-          rowTop + 18,
-          { width: 515, align: 'center' },
-        );
-
-      document.end();
-    });
-  }
 }

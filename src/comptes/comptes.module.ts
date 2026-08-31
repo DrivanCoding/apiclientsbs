@@ -7,6 +7,7 @@ import { Transaction } from '../entities/transaction.entity';
 import { Typecompte } from '../entities/typecompte.entity';
 import { ComptesController } from './comptes.controller';
 import { ComptesService } from './comptes.service';
+import { CoreBankingStatementService } from './core-banking-statement.service';
 
 @Module({
   imports: [
@@ -19,6 +20,6 @@ import { ComptesService } from './comptes.service';
     ]),
   ],
   controllers: [ComptesController],
-  providers: [ComptesService],
+  providers: [ComptesService, CoreBankingStatementService],
 })
 export class ComptesModule {}

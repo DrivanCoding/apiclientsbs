@@ -83,6 +83,8 @@ export class ComptesController {
       'Content-Type': 'application/pdf',
       'Content-Disposition': `attachment; filename="releve_compte_${id}.pdf"`,
       'Content-Length': pdfBuffer.length,
+      'Cache-Control': 'private, no-store',
+      'X-Content-Type-Options': 'nosniff',
     });
     res.end(pdfBuffer);
   }
