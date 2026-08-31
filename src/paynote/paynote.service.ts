@@ -85,36 +85,30 @@ export class PaynoteService {
   }
 
   private getCredentials(scope?: PaynoteScope) {
+    const scopedClientId =
+      scope === 'orange'
+        ? process.env.PAYNOTE_ORANGE_TOKEN_CLIENT_ID
+        : scope === 'mtn'
+          ? process.env.PAYNOTE_MTN_TOKEN_CLIENT_ID
+          : undefined;
+    const scopedClientSecret =
+      scope === 'orange'
+        ? process.env.PAYNOTE_ORANGE_TOKEN_CLIENT_SECRET
+        : scope === 'mtn'
+          ? process.env.PAYNOTE_MTN_TOKEN_CLIENT_SECRET
+          : undefined;
+    // La nouvelle API Orange distingue les identifiants OAuth2
+    // (ClientId/ClientSecret) des cles placees dans le corps du paiement.
     const key =
+      scopedClientId ||
       process.env.PAYNOTE_CLIENT_ID ||
-      process.env.PAYNOTE_CUSTOMER_KEY ||
-      (scope === 'orange'
-        ? process.env.PAYNOTE_ORANGE_CUSTOMER_KEY
-        : undefined) ||
-      (scope === 'mtn'
-        ? process.env.PAYNOTE_MTN_TOKEN_CLIENT_ID ||
-          process.env.PAYNOTE_MTN_CUSTOMER_KEY
-        : undefined) ||
       process.env.PAYNOTE_MUTUALIZED_CLIENT_ID ||
-      process.env.PAYNOTE_MTN_TOKEN_CLIENT_ID ||
-      process.env.PAYNOTE_ORANGE_CUSTOMER_KEY ||
-      process.env.PAYNOTE_MTN_CUSTOMER_KEY ||
       '';
 
     const secret =
+      scopedClientSecret ||
       process.env.PAYNOTE_CLIENT_SECRET ||
-      process.env.PAYNOTE_CUSTOMER_SECRET ||
-      (scope === 'orange'
-        ? process.env.PAYNOTE_ORANGE_CUSTOMER_SECRET
-        : undefined) ||
-      (scope === 'mtn'
-        ? process.env.PAYNOTE_MTN_TOKEN_CLIENT_SECRET ||
-          process.env.PAYNOTE_MTN_CUSTOMER_SECRET
-        : undefined) ||
       process.env.PAYNOTE_MUTUALIZED_CLIENT_SECRET ||
-      process.env.PAYNOTE_MTN_TOKEN_CLIENT_SECRET ||
-      process.env.PAYNOTE_ORANGE_CUSTOMER_SECRET ||
-      process.env.PAYNOTE_MTN_CUSTOMER_SECRET ||
       '';
 
     return { key, secret };
@@ -156,39 +150,31 @@ export class PaynoteService {
 
   private getCustomerKey(scope?: PaynoteScope) {
     return (
-      process.env.PAYNOTE_CUSTOMER_KEY ||
-      process.env.PAYNOTE_CLIENT_ID ||
       (scope === 'orange'
         ? process.env.PAYNOTE_ORANGE_CUSTOMER_KEY
         : undefined) ||
       (scope === 'mtn' ? process.env.PAYNOTE_MTN_CUSTOMER_KEY : undefined) ||
-      process.env.PAYNOTE_ORANGE_CUSTOMER_KEY ||
-      process.env.PAYNOTE_MTN_CUSTOMER_KEY ||
+      process.env.PAYNOTE_CUSTOMER_KEY ||
       ''
     );
   }
 
   private getCustomerSecret(scope?: PaynoteScope) {
     return (
-      process.env.PAYNOTE_CUSTOMER_SECRET ||
-      process.env.PAYNOTE_CLIENT_SECRET ||
       (scope === 'orange'
         ? process.env.PAYNOTE_ORANGE_CUSTOMER_SECRET
         : undefined) ||
       (scope === 'mtn' ? process.env.PAYNOTE_MTN_CUSTOMER_SECRET : undefined) ||
-      process.env.PAYNOTE_ORANGE_CUSTOMER_SECRET ||
-      process.env.PAYNOTE_MTN_CUSTOMER_SECRET ||
+      process.env.PAYNOTE_CUSTOMER_SECRET ||
       ''
     );
   }
 
   private getNotifUrl(scope?: PaynoteScope) {
     return (
-      process.env.PAYNOTE_NOTIF_URL ||
       (scope === 'orange' ? process.env.PAYNOTE_ORANGE_NOTIF_URL : undefined) ||
       (scope === 'mtn' ? process.env.PAYNOTE_MTN_NOTIF_URL : undefined) ||
-      process.env.PAYNOTE_ORANGE_NOTIF_URL ||
-      process.env.PAYNOTE_MTN_NOTIF_URL ||
+      process.env.PAYNOTE_NOTIF_URL ||
       ''
     );
   }
@@ -245,8 +231,14 @@ export class PaynoteService {
   ): Promise<string> {
     const { key, secret } = params.credentials;
     if (!key || !secret) {
+      const credentialPrefix =
+        scope === 'orange'
+          ? 'PAYNOTE_ORANGE_TOKEN_CLIENT_ID/SECRET'
+          : scope === 'mtn'
+            ? 'PAYNOTE_MTN_TOKEN_CLIENT_ID/SECRET'
+            : 'PAYNOTE_CLIENT_ID/SECRET';
       throw new Error(
-        'Identifiants Paynote manquants (PAYNOTE_CLIENT_ID/SECRET ou PAYNOTE_CUSTOMER_KEY/SECRET)',
+        `Identifiants OAuth2 Paynote manquants (${credentialPrefix})`,
       );
     }
 
@@ -270,7 +262,7 @@ export class PaynoteService {
       });
       if (!res.ok) {
         const text = await res.text().catch(() => '');
-        throw this.providerError('token', res.status, text);
+        throw this.providerError(`token:${scope}`, res.status, text);
       }
       const data = (await res.json()) as TokenResponse;
       if (!data?.access_token) {
@@ -379,8 +371,11 @@ export class PaynoteService {
     const description = String(fault.description || '').trim();
 
     if (status === 401 || code === '900901') {
+      const message = operation.startsWith('token:')
+        ? 'Authentification Paynote refusee lors de la generation du jeton. Verifiez le ClientId et le ClientSecret du nouvel acces OAuth2 de cet operateur.'
+        : 'Authentification Paynote refusee lors de la requete de paiement. Verifiez les nouvelles valeurs CustomerKey et CustomerSecret de cet operateur.';
       return new PaynoteProviderError(
-        'Configuration Paynote invalide ou jeton expire. Verifiez vos identifiants ClientId/ClientSecret ou CustomerKey/CustomerSecret.',
+        message,
         status,
         operation,
         fault,

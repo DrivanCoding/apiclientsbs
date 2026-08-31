@@ -63,10 +63,19 @@ validate_configuration() {
   payment_provider="$(read_env_value MYAPIOPERATOR | tr '[:upper:]' '[:lower:]')"
   if [[ "$payment_provider" == "paynote" ]]; then
     local webhook_secret webhook_url orange_webhook_url mtn_webhook_url
+    local orange_client_id orange_client_secret orange_customer_key orange_customer_secret
     webhook_secret="$(read_env_value PAYNOTE_WEBHOOK_SECRET)"
     webhook_url="$(read_env_value PAYNOTE_NOTIF_URL)"
+    orange_client_id="$(read_env_value PAYNOTE_ORANGE_TOKEN_CLIENT_ID)"
+    orange_client_secret="$(read_env_value PAYNOTE_ORANGE_TOKEN_CLIENT_SECRET)"
+    orange_customer_key="$(read_env_value PAYNOTE_ORANGE_CUSTOMER_KEY)"
+    orange_customer_secret="$(read_env_value PAYNOTE_ORANGE_CUSTOMER_SECRET)"
 
     [[ -n "$webhook_secret" ]] || fail "PAYNOTE_WEBHOOK_SECRET est obligatoire lorsque Paynote est actif"
+    [[ -n "$orange_client_id" ]] || fail "PAYNOTE_ORANGE_TOKEN_CLIENT_ID est obligatoire avec la nouvelle API Orange"
+    [[ -n "$orange_client_secret" ]] || fail "PAYNOTE_ORANGE_TOKEN_CLIENT_SECRET est obligatoire avec la nouvelle API Orange"
+    [[ -n "$orange_customer_key" ]] || fail "PAYNOTE_ORANGE_CUSTOMER_KEY est obligatoire avec la nouvelle API Orange"
+    [[ -n "$orange_customer_secret" ]] || fail "PAYNOTE_ORANGE_CUSTOMER_SECRET est obligatoire avec la nouvelle API Orange"
     if [[ -n "$webhook_url" ]]; then
       [[ "$webhook_url" == "https://${APP_DOMAIN}/api/paynote/webhook"* ]] ||
         fail "PAYNOTE_NOTIF_URL doit utiliser https://${APP_DOMAIN}/api/paynote/webhook"

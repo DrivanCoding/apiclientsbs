@@ -195,7 +195,7 @@ describe('PaynoteService', () => {
 
     await expect(service.getAccessToken()).rejects.toMatchObject({
       message: expect.stringContaining(
-        'Configuration Paynote invalide ou jeton expire',
+        'generation du jeton',
       ),
     });
   });
@@ -257,6 +257,8 @@ describe('PaynoteService', () => {
   it('keeps Orange and MTN access tokens separated', async () => {
     delete process.env.PAYNOTE_CLIENT_ID;
     delete process.env.PAYNOTE_CLIENT_SECRET;
+    process.env.PAYNOTE_ORANGE_TOKEN_CLIENT_ID = 'orange-client-id';
+    process.env.PAYNOTE_ORANGE_TOKEN_CLIENT_SECRET = 'orange-client-secret';
     process.env.PAYNOTE_ORANGE_CUSTOMER_KEY = 'orange-key';
     process.env.PAYNOTE_ORANGE_CUSTOMER_SECRET = 'orange-secret';
     process.env.PAYNOTE_MTN_TOKEN_CLIENT_ID = 'mtn-key';
@@ -273,5 +275,68 @@ describe('PaynoteService', () => {
     await expect(service.getMutualizedAccessToken()).resolves.toBe('mtn-token');
 
     expect(global.fetch).toHaveBeenCalledTimes(2);
+    const calls = (global.fetch as jest.Mock).mock.calls;
+    expect(calls[0][1].headers.Authorization).toBe(
+      `Basic ${Buffer.from('orange-client-id:orange-client-secret').toString('base64')}`,
+    );
+    expect(calls[1][1].headers.Authorization).toBe(
+      `Basic ${Buffer.from('mtn-key:mtn-secret').toString('base64')}`,
+    );
+  });
+
+  it('uses Orange-scoped credentials before generic Paynote credentials', async () => {
+    process.env.PAYNOTE_CLIENT_ID = 'generic-client-id';
+    process.env.PAYNOTE_CLIENT_SECRET = 'generic-client-secret';
+    process.env.PAYNOTE_CUSTOMER_KEY = 'generic-customer-key';
+    process.env.PAYNOTE_CUSTOMER_SECRET = 'generic-customer-secret';
+    process.env.PAYNOTE_ORANGE_TOKEN_CLIENT_ID = 'orange-client-id';
+    process.env.PAYNOTE_ORANGE_TOKEN_CLIENT_SECRET = 'orange-client-secret';
+    process.env.PAYNOTE_ORANGE_CUSTOMER_KEY = 'orange-customer-key';
+    process.env.PAYNOTE_ORANGE_CUSTOMER_SECRET = 'orange-customer-secret';
+
+    const service = new PaynoteService();
+    global.fetch = jest
+      .fn()
+      .mockResolvedValueOnce(tokenResponse('orange-token'))
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ StatusCode: 200 }),
+      }) as unknown as typeof fetch;
+
+    await service.orangePay({
+      amount: 500,
+      subscriberMsisdn: '695327301',
+      orderId: 'ORANGE-MIGRATION-001',
+      description: 'Test migration Orange',
+    });
+
+    const calls = (global.fetch as jest.Mock).mock.calls;
+    expect(calls[0][1].headers.Authorization).toBe(
+      `Basic ${Buffer.from('orange-client-id:orange-client-secret').toString('base64')}`,
+    );
+    expect(JSON.parse(calls[1][1].body).API_MUT).toMatchObject({
+      customerkey: 'orange-customer-key',
+      customersecret: 'orange-customer-secret',
+      PaiementMethod: 'OM_CMR',
+    });
+  });
+
+  it('does not reuse Orange customer keys as OAuth2 credentials', async () => {
+    delete process.env.PAYNOTE_CLIENT_ID;
+    delete process.env.PAYNOTE_CLIENT_SECRET;
+    delete process.env.PAYNOTE_MUTUALIZED_CLIENT_ID;
+    delete process.env.PAYNOTE_MUTUALIZED_CLIENT_SECRET;
+    delete process.env.PAYNOTE_ORANGE_TOKEN_CLIENT_ID;
+    delete process.env.PAYNOTE_ORANGE_TOKEN_CLIENT_SECRET;
+    process.env.PAYNOTE_ORANGE_CUSTOMER_KEY = 'orange-customer-key';
+    process.env.PAYNOTE_ORANGE_CUSTOMER_SECRET = 'orange-customer-secret';
+
+    const service = new PaynoteService();
+    global.fetch = jest.fn() as unknown as typeof fetch;
+
+    await expect(service.getOrangeAccessToken()).rejects.toThrow(
+      'PAYNOTE_ORANGE_TOKEN_CLIENT_ID/SECRET',
+    );
+    expect(global.fetch).not.toHaveBeenCalled();
   });
 });
