@@ -182,7 +182,7 @@ export class TransactionsController {
       throw new UnauthorizedException('Client authentifie introuvable');
     }
 
-    return this.service.findByClient(idclient, dateDebut, dateFin);
+    return this.service.findByClient(idclient, dateDebut, dateFin, true);
   }
 
   @Get('client/:id')

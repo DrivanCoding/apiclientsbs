@@ -541,7 +541,12 @@ export class TransactionsService {
     };
   }
 
-  async findByClient(idclient: number, dateDebut?: string, dateFin?: string) {
+  async findByClient(
+    idclient: number,
+    dateDebut?: string,
+    dateFin?: string,
+    confirmedOnly = false,
+  ) {
     try {
       const query = this.repository
         .createQueryBuilder('transaction')
@@ -554,6 +559,12 @@ export class TransactionsService {
         .where('compte.idclient = :idclient', { idclient })
         .andWhere('typecompte.mobile_sync_enabled = 1')
         .andWhere('typecompte.mobile_can_view = 1');
+
+      if (confirmedOnly) {
+        query.andWhere('transaction.statut = :statut', {
+          statut: 'complete',
+        });
+      }
 
       if (dateDebut) {
         query.andWhere('DATE(transaction.date_transaction) >= :dateDebut', {
@@ -577,6 +588,10 @@ export class TransactionsService {
       // Backward compatibility when migration for transaction.operateur is not applied.
       const filters: string[] = [];
       const params: Array<number | string> = [idclient];
+      if (confirmedOnly) {
+        filters.push('AND t.statut = ?');
+        params.push('complete');
+      }
       if (dateDebut) {
         filters.push('AND DATE(t.date_transaction) >= ?');
         params.push(dateDebut);

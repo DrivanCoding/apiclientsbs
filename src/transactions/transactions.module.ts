@@ -13,6 +13,7 @@ import { PaynoteModule } from '../paynote/paynote.module';
 import { MavianceModule } from '../maviance/maviance.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { PaynoteWebhookController } from './paynote-webhook.controller';
+import { PaynoteVerificationService } from './paynote-verification.service';
 import { TransactionsController } from './transactions.controller';
 import { TransactionsService } from './transactions.service';
 
@@ -34,6 +35,6 @@ import { TransactionsService } from './transactions.service';
     NotificationsModule,
   ],
   controllers: [TransactionsController, PaynoteWebhookController],
-  providers: [TransactionsService],
+  providers: [TransactionsService, PaynoteVerificationService],
 })
-export class TransactionsModule { }
+export class TransactionsModule {}

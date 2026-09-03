@@ -21,7 +21,12 @@ describe('TransactionsController', () => {
       ),
     ).resolves.toEqual([]);
 
-    expect(service.findByClient).toHaveBeenCalledWith(42, undefined, undefined);
+    expect(service.findByClient).toHaveBeenCalledWith(
+      42,
+      undefined,
+      undefined,
+      true,
+    );
   });
 
   it('refuses the client route when the token has no client identifier', () => {

@@ -108,6 +108,24 @@ describe('TransactionsService - Paynote Resilient Payment & Webhook', () => {
     service = module.get<TransactionsService>(TransactionsService);
   });
 
+  it('returns only completed transactions for the mobile client history', async () => {
+    const queryBuilder = {
+      innerJoin: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      orderBy: jest.fn().mockReturnThis(),
+      getMany: jest.fn().mockResolvedValue([]),
+    };
+    mockTxRepo.createQueryBuilder = jest.fn(() => queryBuilder);
+
+    await service.findByClient(42, undefined, undefined, true);
+
+    expect(queryBuilder.andWhere).toHaveBeenCalledWith(
+      'transaction.statut = :statut',
+      { statut: 'complete' },
+    );
+  });
+
   it('finalizes a pending deposit, credits the account, and emits notification', async () => {
     const pendingTx: Partial<Transaction> = {
       idtransaction: 1,
