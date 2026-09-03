@@ -35,6 +35,12 @@ import { AppEntity } from '../entities/app.entity';
 import { Notification } from '../entities/notification.entity';
 import { OuvertureCompteTampon } from '../entities/ouverture-compte-tampon.entity';
 import { PreouvertureClientTampon } from '../entities/preouverture-client-tampon.entity';
+import {
+  applyCoreDocumentPaths,
+  deleteSourcePreouvertureDocuments,
+  missingTransferredDocuments,
+  sourcePreouvertureDocuments,
+} from './preouverture-document-transfer';
 
 @Injectable()
 export class AdminService {
@@ -496,7 +502,11 @@ export class AdminService {
 
   async updatePreouvertureTamponStatus(
     id: number,
-    payload: { statut_validation?: string; message_validation?: string },
+    payload: {
+      statut_validation?: string;
+      message_validation?: string;
+      document_paths?: Record<string, string>;
+    },
   ) {
     const demande = await this.preouvertureTamponRepository.findOneBy({ id });
     if (!demande) {
@@ -506,6 +516,21 @@ export class AdminService {
       demande.statut_validation,
       payload.statut_validation,
     );
+    if (payload.statut_validation === 'posted') {
+      const sourceDocuments = sourcePreouvertureDocuments(demande);
+      const documentPaths = payload.document_paths ?? {};
+      const missingDocuments = missingTransferredDocuments(
+        sourceDocuments,
+        documentPaths,
+      );
+      if (missingDocuments.length > 0) {
+        throw new BadRequestException(
+          `Documents non confirmes par le core banking: ${missingDocuments.join(', ')}`,
+        );
+      }
+      await deleteSourcePreouvertureDocuments(sourceDocuments);
+      applyCoreDocumentPaths(demande, documentPaths);
+    }
     demande.statut_validation =
       payload.statut_validation ?? demande.statut_validation;
     demande.message_validation =

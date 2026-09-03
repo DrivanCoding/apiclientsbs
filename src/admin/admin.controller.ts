@@ -136,7 +136,11 @@ export class AdminController {
   updatePreouvertureTamponStatus(
     @Param('id', ParseIntPipe) id: number,
     @Body()
-    payload: { statut_validation?: string; message_validation?: string },
+    payload: {
+      statut_validation?: string;
+      message_validation?: string;
+      document_paths?: Record<string, string>;
+    },
   ) {
     return this.adminService.updatePreouvertureTamponStatus(id, payload);
   }
