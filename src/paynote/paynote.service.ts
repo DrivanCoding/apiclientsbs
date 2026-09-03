@@ -61,7 +61,38 @@ type TokenCacheEntry = {
 export class PaynoteService {
   private readonly tokenCache = new Map<PaynoteScope, TokenCacheEntry>();
 
+  private usesLegacyOrangeApi() {
+    return (
+      String(process.env.PAYNOTE_ORANGE_MODE || 'mutualized')
+        .trim()
+        .toLowerCase() === 'legacy'
+    );
+  }
+
+  private getLegacyOrangeBaseUrl() {
+    const raw = String(
+      process.env.PAYNOTE_ORANGE_LEGACY_BASE_URL || 'https://api-s1.orange.cm',
+    )
+      .trim()
+      .replace(/\/+$/, '');
+
+    let url: URL;
+    try {
+      url = new URL(raw);
+    } catch {
+      throw new Error('PAYNOTE_ORANGE_LEGACY_BASE_URL invalide');
+    }
+    if (url.protocol !== 'https:') {
+      throw new Error('PAYNOTE_ORANGE_LEGACY_BASE_URL doit utiliser HTTPS');
+    }
+    return raw;
+  }
+
   private getTokenUrl(scope?: PaynoteScope) {
+    if (scope === 'orange' && this.usesLegacyOrangeApi()) {
+      return `${this.getLegacyOrangeBaseUrl()}/token`;
+    }
+
     const specific =
       scope === 'orange'
         ? process.env.PAYNOTE_ORANGE_TOKEN_URL
@@ -85,6 +116,19 @@ export class PaynoteService {
   }
 
   private getCredentials(scope?: PaynoteScope) {
+    if (scope === 'orange' && this.usesLegacyOrangeApi()) {
+      return {
+        key:
+          process.env.PAYNOTE_ORANGE_LEGACY_CUSTOMER_KEY ||
+          process.env.PAYNOTE_ORANGE_CUSTOMER_KEY ||
+          '',
+        secret:
+          process.env.PAYNOTE_ORANGE_LEGACY_CUSTOMER_SECRET ||
+          process.env.PAYNOTE_ORANGE_CUSTOMER_SECRET ||
+          '',
+      };
+    }
+
     const scopedClientId =
       scope === 'orange'
         ? process.env.PAYNOTE_ORANGE_TOKEN_CLIENT_ID
@@ -233,7 +277,9 @@ export class PaynoteService {
     if (!key || !secret) {
       const credentialPrefix =
         scope === 'orange'
-          ? 'PAYNOTE_ORANGE_TOKEN_CLIENT_ID/SECRET'
+          ? this.usesLegacyOrangeApi()
+            ? 'PAYNOTE_ORANGE_LEGACY_CUSTOMER_KEY/SECRET ou PAYNOTE_ORANGE_CUSTOMER_KEY/SECRET'
+            : 'PAYNOTE_ORANGE_TOKEN_CLIENT_ID/SECRET'
           : scope === 'mtn'
             ? 'PAYNOTE_MTN_TOKEN_CLIENT_ID/SECRET'
             : 'PAYNOTE_CLIENT_ID/SECRET';
@@ -371,15 +417,17 @@ export class PaynoteService {
     const description = String(fault.description || '').trim();
 
     if (status === 401 || code === '900901') {
-      const message = operation.startsWith('token:')
-        ? 'Authentification Paynote refusee lors de la generation du jeton. Verifiez le ClientId et le ClientSecret du nouvel acces OAuth2 de cet operateur.'
-        : 'Authentification Paynote refusee lors de la requete de paiement. Verifiez les nouvelles valeurs CustomerKey et CustomerSecret de cet operateur.';
-      return new PaynoteProviderError(
-        message,
-        status,
-        operation,
-        fault,
-      );
+      const isLegacyOrange =
+        this.usesLegacyOrangeApi() &&
+        (operation === 'token:orange' || operation.includes('/omcoreapis/'));
+      const message = isLegacyOrange
+        ? operation.startsWith('token:')
+          ? "Authentification ancienne API Orange refusee. Verifiez l'ancienne CustomerKey et l'ancien CustomerSecret fournis par Paynote."
+          : "Authentification ancienne API Orange refusee. Verifiez le X-AUTH-TOKEN et l'acces marchand fournis par Paynote."
+        : operation.startsWith('token:')
+          ? 'Authentification Paynote refusee lors de la generation du jeton. Verifiez le ClientId et le ClientSecret du nouvel acces OAuth2 de cet operateur.'
+          : 'Authentification Paynote refusee lors de la requete de paiement. Verifiez les nouvelles valeurs CustomerKey et CustomerSecret de cet operateur.';
+      return new PaynoteProviderError(message, status, operation, fault);
     }
 
     if (code === '900902') {
@@ -464,6 +512,31 @@ export class PaynoteService {
       return String(value).trim();
     }
     return undefined;
+  }
+
+  private findStringField(payload: unknown, fieldNames: string[]) {
+    const expected = new Set(fieldNames.map((name) => name.toLowerCase()));
+    let found = '';
+
+    const walk = (node: unknown) => {
+      if (found || !node || typeof node !== 'object') return;
+      for (const [key, value] of Object.entries(
+        node as Record<string, unknown>,
+      )) {
+        if (
+          expected.has(key.toLowerCase()) &&
+          (typeof value === 'string' || typeof value === 'number')
+        ) {
+          found = String(value).trim();
+          return;
+        }
+        walk(value);
+        if (found) return;
+      }
+    };
+
+    walk(payload);
+    return found;
   }
 
   private isInvalidTokenError(error: unknown): boolean {
@@ -650,7 +723,130 @@ export class PaynoteService {
     );
   }
 
+  private getLegacyOrangePaymentConfig(requireMerchantDetails = true) {
+    const xAuthToken = String(
+      process.env.PAYNOTE_ORANGE_LEGACY_X_AUTH_TOKEN || '',
+    ).trim();
+    const channelUserMsisdn = String(
+      process.env.PAYNOTE_ORANGE_LEGACY_CHANNEL_USER_MSISDN || '',
+    )
+      .replace(/\D/g, '')
+      .replace(/^237/, '');
+    const pin = String(process.env.PAYNOTE_ORANGE_LEGACY_PIN || '').trim();
+    const missing: string[] = [];
+
+    if (!xAuthToken) missing.push('PAYNOTE_ORANGE_LEGACY_X_AUTH_TOKEN');
+    if (requireMerchantDetails && !channelUserMsisdn) {
+      missing.push('PAYNOTE_ORANGE_LEGACY_CHANNEL_USER_MSISDN');
+    }
+    if (requireMerchantDetails && !pin) {
+      missing.push('PAYNOTE_ORANGE_LEGACY_PIN');
+    }
+    if (missing.length) {
+      throw new Error(
+        `Configuration ancienne API Orange incomplete: ${missing.join(', ')}`,
+      );
+    }
+    if (requireMerchantDetails && !/^6\d{8}$/.test(channelUserMsisdn)) {
+      throw new Error(
+        'PAYNOTE_ORANGE_LEGACY_CHANNEL_USER_MSISDN doit contenir un numero camerounais de 9 chiffres sans indicatif.',
+      );
+    }
+
+    return {
+      baseUrl: this.getLegacyOrangeBaseUrl(),
+      xAuthToken,
+      channelUserMsisdn,
+      pin,
+    };
+  }
+
+  private async legacyOrangePay(
+    request: OrangePayRequest,
+  ): Promise<Record<string, any>> {
+    const config = this.getLegacyOrangePaymentConfig();
+    const rawNotifUrl = request.notifUrl || this.getNotifUrl('orange');
+    if (!rawNotifUrl) throw new Error('PAYNOTE_NOTIF_URL manquant');
+
+    const notifUrl = this.validateNotifUrl(rawNotifUrl);
+    const amount = this.validateAmount(request.amount, 'orange');
+    const subscriberMsisdn = this.normalizeSubscriberMsisdn(
+      request.subscriberMsisdn,
+    );
+
+    const initResponse = await this.fetchJsonWithFreshToken(
+      config.baseUrl,
+      '/omcoreapis/1.0.2/mp/init',
+      (token) => ({
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'X-AUTH-TOKEN': config.xAuthToken,
+        },
+      }),
+      'orange',
+    );
+    const payToken = this.findStringField(initResponse, ['payToken']);
+    if (!payToken) {
+      throw new Error(
+        "Ancienne API Orange: aucun payToken retourne lors de l'initialisation",
+      );
+    }
+
+    const paymentResponse = await this.fetchJsonWithFreshToken(
+      config.baseUrl,
+      '/omcoreapis/1.0.2/mp/pay',
+      (token) => ({
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'X-AUTH-TOKEN': config.xAuthToken,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          notifUrl,
+          channelUserMsisdn: config.channelUserMsisdn,
+          amount,
+          subscriberMsisdn,
+          pin: config.pin,
+          orderId: String(request.orderId || '').trim(),
+          description: String(request.description || '').trim(),
+          payToken,
+        }),
+      }),
+      'orange',
+    );
+
+    // Expose aussi le payToken au premier niveau pour garantir sa sauvegarde
+    // avant le polling et permettre une reprise asynchrone fiable.
+    return { ...paymentResponse, payToken };
+  }
+
+  private async legacyOrangePaymentStatus(
+    request: OrangeStatusRequest,
+  ): Promise<Record<string, any>> {
+    const config = this.getLegacyOrangePaymentConfig(false);
+    const payToken = String(request.messageId || '').trim();
+    if (!payToken) throw new Error('payToken Orange requis');
+
+    return this.fetchJsonWithFreshToken(
+      config.baseUrl,
+      `/omcoreapis/1.0.2/mp/paymentstatus/${encodeURIComponent(payToken)}`,
+      (token) => ({
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'X-AUTH-TOKEN': config.xAuthToken,
+        },
+      }),
+      'orange',
+    );
+  }
+
   async orangePay(request: OrangePayRequest): Promise<Record<string, any>> {
+    if (this.usesLegacyOrangeApi()) {
+      return this.legacyOrangePay(request);
+    }
     return this.mutualizedPay(
       { ...request, paymentMethod: this.getPaymentMethod('orange') },
       'orange',
@@ -660,6 +856,9 @@ export class PaynoteService {
   async orangePaymentStatus(
     request: OrangeStatusRequest,
   ): Promise<Record<string, any>> {
+    if (this.usesLegacyOrangeApi()) {
+      return this.legacyOrangePaymentStatus(request);
+    }
     return this.mutualizedPaymentStatus(
       { ...request, paymentMethod: this.getPaymentMethod('orange') },
       'orange',

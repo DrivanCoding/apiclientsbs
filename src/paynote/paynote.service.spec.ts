@@ -42,6 +42,7 @@ describe('PaynoteService', () => {
       PAYNOTE_TOKEN_URL: 'https://omapi-token.ynote.africa/oauth2/token',
       PAYNOTE_API_BASE: 'https://omapi.ynote.africa/prod',
       PAYNOTE_TIMEOUT_MS: '1000',
+      PAYNOTE_ORANGE_MODE: 'mutualized',
     };
   });
 
@@ -194,9 +195,7 @@ describe('PaynoteService', () => {
     }) as unknown as typeof fetch;
 
     await expect(service.getAccessToken()).rejects.toMatchObject({
-      message: expect.stringContaining(
-        'generation du jeton',
-      ),
+      message: expect.stringContaining('generation du jeton'),
     });
   });
 
@@ -337,6 +336,139 @@ describe('PaynoteService', () => {
     await expect(service.getOrangeAccessToken()).rejects.toThrow(
       'PAYNOTE_ORANGE_TOKEN_CLIENT_ID/SECRET',
     );
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  it('performs Orange Money payment with the legacy direct API', async () => {
+    process.env.PAYNOTE_ORANGE_MODE = 'legacy';
+    process.env.PAYNOTE_ORANGE_LEGACY_BASE_URL = 'https://api-s1.orange.cm';
+    process.env.PAYNOTE_ORANGE_LEGACY_CUSTOMER_KEY = 'legacy-customer-key';
+    process.env.PAYNOTE_ORANGE_LEGACY_CUSTOMER_SECRET =
+      'legacy-customer-secret';
+    process.env.PAYNOTE_ORANGE_LEGACY_X_AUTH_TOKEN = 'legacy-x-auth';
+    process.env.PAYNOTE_ORANGE_LEGACY_CHANNEL_USER_MSISDN = '237699000000';
+    process.env.PAYNOTE_ORANGE_LEGACY_PIN = '1234';
+
+    const service = new PaynoteService();
+    global.fetch = jest
+      .fn()
+      .mockResolvedValueOnce(tokenResponse('legacy-access-token'))
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          message: 'Payment initialized',
+          data: { payToken: 'MP-LEGACY-001' },
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          message: 'Merchant payment successfully initiated',
+          data: { payToken: 'MP-LEGACY-001', status: 'PENDING' },
+        }),
+      }) as unknown as typeof fetch;
+
+    const result = await service.orangePay({
+      amount: 1000,
+      subscriberMsisdn: '237692000000',
+      orderId: 'ORD-LEGACY-001',
+      description: 'Paiement Orange ancien flux',
+    });
+
+    expect(result).toMatchObject({
+      payToken: 'MP-LEGACY-001',
+      data: { status: 'PENDING' },
+    });
+
+    const calls = (global.fetch as jest.Mock).mock.calls;
+    expect(calls[0][0]).toBe('https://api-s1.orange.cm/token');
+    expect(calls[0][1].headers.Authorization).toBe(
+      `Basic ${Buffer.from('legacy-customer-key:legacy-customer-secret').toString('base64')}`,
+    );
+    expect(calls[1][0]).toBe(
+      'https://api-s1.orange.cm/omcoreapis/1.0.2/mp/init',
+    );
+    expect(calls[1][1]).toMatchObject({
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer legacy-access-token',
+        'X-AUTH-TOKEN': 'legacy-x-auth',
+      },
+    });
+    expect(calls[2][0]).toBe(
+      'https://api-s1.orange.cm/omcoreapis/1.0.2/mp/pay',
+    );
+    expect(JSON.parse(calls[2][1].body)).toEqual({
+      notifUrl: 'https://mysite.com/notif?token=test-webhook-secret',
+      channelUserMsisdn: '699000000',
+      amount: '1000',
+      subscriberMsisdn: '692000000',
+      pin: '1234',
+      orderId: 'ORD-LEGACY-001',
+      description: 'Paiement Orange ancien flux',
+      payToken: 'MP-LEGACY-001',
+    });
+  });
+
+  it('checks Orange status with the legacy payToken endpoint', async () => {
+    process.env.PAYNOTE_ORANGE_MODE = 'legacy';
+    process.env.PAYNOTE_ORANGE_LEGACY_CUSTOMER_KEY = 'legacy-customer-key';
+    process.env.PAYNOTE_ORANGE_LEGACY_CUSTOMER_SECRET =
+      'legacy-customer-secret';
+    process.env.PAYNOTE_ORANGE_LEGACY_X_AUTH_TOKEN = 'legacy-x-auth';
+    process.env.PAYNOTE_ORANGE_LEGACY_CHANNEL_USER_MSISDN = '699000000';
+    process.env.PAYNOTE_ORANGE_LEGACY_PIN = '1234';
+
+    const service = new PaynoteService();
+    global.fetch = jest
+      .fn()
+      .mockResolvedValueOnce(tokenResponse('legacy-access-token'))
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          data: {
+            payToken: 'MP-LEGACY-001',
+            status: 'SUCCESSFUL',
+            confirmtxnstatus: '200',
+          },
+        }),
+      }) as unknown as typeof fetch;
+
+    const result = await service.orangePaymentStatus({
+      messageId: 'MP-LEGACY-001',
+    });
+
+    expect(result).toMatchObject({ data: { status: 'SUCCESSFUL' } });
+    const call = (global.fetch as jest.Mock).mock.calls[1];
+    expect(call[0]).toBe(
+      'https://api-s1.orange.cm/omcoreapis/1.0.2/mp/paymentstatus/MP-LEGACY-001',
+    );
+    expect(call[1]).toMatchObject({
+      method: 'GET',
+      headers: {
+        Authorization: 'Bearer legacy-access-token',
+        'X-AUTH-TOKEN': 'legacy-x-auth',
+      },
+    });
+  });
+
+  it('reports every missing legacy Orange merchant setting', async () => {
+    process.env.PAYNOTE_ORANGE_MODE = 'legacy';
+    delete process.env.PAYNOTE_ORANGE_LEGACY_X_AUTH_TOKEN;
+    delete process.env.PAYNOTE_ORANGE_LEGACY_CHANNEL_USER_MSISDN;
+    delete process.env.PAYNOTE_ORANGE_LEGACY_PIN;
+
+    const service = new PaynoteService();
+    global.fetch = jest.fn() as unknown as typeof fetch;
+
+    await expect(
+      service.orangePay({
+        amount: 1000,
+        subscriberMsisdn: '692000000',
+        orderId: 'ORD-LEGACY-MISSING',
+        description: 'Configuration incomplete',
+      }),
+    ).rejects.toThrow('PAYNOTE_ORANGE_LEGACY_X_AUTH_TOKEN');
     expect(global.fetch).not.toHaveBeenCalled();
   });
 });
