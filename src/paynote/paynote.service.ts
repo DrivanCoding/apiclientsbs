@@ -71,7 +71,7 @@ export class PaynoteService {
 
   private getLegacyOrangeBaseUrl() {
     const raw = String(
-      process.env.PAYNOTE_ORANGE_LEGACY_BASE_URL || 'https://api-s1.orange.cm',
+      process.env.PAYNOTE_ORANGE_DIRECT_API_BASE || 'https://api-s1.orange.cm',
     )
       .trim()
       .replace(/\/+$/, '');
@@ -80,10 +80,10 @@ export class PaynoteService {
     try {
       url = new URL(raw);
     } catch {
-      throw new Error('PAYNOTE_ORANGE_LEGACY_BASE_URL invalide');
+      throw new Error('PAYNOTE_ORANGE_DIRECT_API_BASE invalide');
     }
     if (url.protocol !== 'https:') {
-      throw new Error('PAYNOTE_ORANGE_LEGACY_BASE_URL doit utiliser HTTPS');
+      throw new Error('PAYNOTE_ORANGE_DIRECT_API_BASE doit utiliser HTTPS');
     }
     return raw;
   }
@@ -118,14 +118,8 @@ export class PaynoteService {
   private getCredentials(scope?: PaynoteScope) {
     if (scope === 'orange' && this.usesLegacyOrangeApi()) {
       return {
-        key:
-          process.env.PAYNOTE_ORANGE_LEGACY_CUSTOMER_KEY ||
-          process.env.PAYNOTE_ORANGE_CUSTOMER_KEY ||
-          '',
-        secret:
-          process.env.PAYNOTE_ORANGE_LEGACY_CUSTOMER_SECRET ||
-          process.env.PAYNOTE_ORANGE_CUSTOMER_SECRET ||
-          '',
+        key: process.env.PAYNOTE_ORANGE_CUSTOMER_KEY || '',
+        secret: process.env.PAYNOTE_ORANGE_CUSTOMER_SECRET || '',
       };
     }
 
@@ -278,7 +272,7 @@ export class PaynoteService {
       const credentialPrefix =
         scope === 'orange'
           ? this.usesLegacyOrangeApi()
-            ? 'PAYNOTE_ORANGE_LEGACY_CUSTOMER_KEY/SECRET ou PAYNOTE_ORANGE_CUSTOMER_KEY/SECRET'
+            ? 'PAYNOTE_ORANGE_CUSTOMER_KEY/SECRET'
             : 'PAYNOTE_ORANGE_TOKEN_CLIENT_ID/SECRET'
           : scope === 'mtn'
             ? 'PAYNOTE_MTN_TOKEN_CLIENT_ID/SECRET'
@@ -725,22 +719,22 @@ export class PaynoteService {
 
   private getLegacyOrangePaymentConfig(requireMerchantDetails = true) {
     const xAuthToken = String(
-      process.env.PAYNOTE_ORANGE_LEGACY_X_AUTH_TOKEN || '',
+      process.env.PAYNOTE_ORANGE_X_AUTH_TOKEN || '',
     ).trim();
     const channelUserMsisdn = String(
-      process.env.PAYNOTE_ORANGE_LEGACY_CHANNEL_USER_MSISDN || '',
+      process.env.PAYNOTE_ORANGE_CHANNEL_USER_MSISDN || '',
     )
       .replace(/\D/g, '')
       .replace(/^237/, '');
-    const pin = String(process.env.PAYNOTE_ORANGE_LEGACY_PIN || '').trim();
+    const pin = String(process.env.PAYNOTE_ORANGE_PIN || '').trim();
     const missing: string[] = [];
 
-    if (!xAuthToken) missing.push('PAYNOTE_ORANGE_LEGACY_X_AUTH_TOKEN');
+    if (!xAuthToken) missing.push('PAYNOTE_ORANGE_X_AUTH_TOKEN');
     if (requireMerchantDetails && !channelUserMsisdn) {
-      missing.push('PAYNOTE_ORANGE_LEGACY_CHANNEL_USER_MSISDN');
+      missing.push('PAYNOTE_ORANGE_CHANNEL_USER_MSISDN');
     }
     if (requireMerchantDetails && !pin) {
-      missing.push('PAYNOTE_ORANGE_LEGACY_PIN');
+      missing.push('PAYNOTE_ORANGE_PIN');
     }
     if (missing.length) {
       throw new Error(
@@ -749,7 +743,7 @@ export class PaynoteService {
     }
     if (requireMerchantDetails && !/^6\d{8}$/.test(channelUserMsisdn)) {
       throw new Error(
-        'PAYNOTE_ORANGE_LEGACY_CHANNEL_USER_MSISDN doit contenir un numero camerounais de 9 chiffres sans indicatif.',
+        'PAYNOTE_ORANGE_CHANNEL_USER_MSISDN doit contenir un numero camerounais de 9 chiffres sans indicatif.',
       );
     }
 

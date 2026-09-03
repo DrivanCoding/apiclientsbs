@@ -341,13 +341,12 @@ describe('PaynoteService', () => {
 
   it('performs Orange Money payment with the legacy direct API', async () => {
     process.env.PAYNOTE_ORANGE_MODE = 'legacy';
-    process.env.PAYNOTE_ORANGE_LEGACY_BASE_URL = 'https://api-s1.orange.cm';
-    process.env.PAYNOTE_ORANGE_LEGACY_CUSTOMER_KEY = 'legacy-customer-key';
-    process.env.PAYNOTE_ORANGE_LEGACY_CUSTOMER_SECRET =
-      'legacy-customer-secret';
-    process.env.PAYNOTE_ORANGE_LEGACY_X_AUTH_TOKEN = 'legacy-x-auth';
-    process.env.PAYNOTE_ORANGE_LEGACY_CHANNEL_USER_MSISDN = '237699000000';
-    process.env.PAYNOTE_ORANGE_LEGACY_PIN = '1234';
+    process.env.PAYNOTE_ORANGE_DIRECT_API_BASE = 'https://api-s1.orange.cm';
+    process.env.PAYNOTE_ORANGE_CUSTOMER_KEY = 'legacy-customer-key';
+    process.env.PAYNOTE_ORANGE_CUSTOMER_SECRET = 'legacy-customer-secret';
+    process.env.PAYNOTE_ORANGE_X_AUTH_TOKEN = 'legacy-x-auth';
+    process.env.PAYNOTE_ORANGE_CHANNEL_USER_MSISDN = '237699000000';
+    process.env.PAYNOTE_ORANGE_PIN = '1234';
 
     const service = new PaynoteService();
     global.fetch = jest
@@ -412,12 +411,11 @@ describe('PaynoteService', () => {
 
   it('checks Orange status with the legacy payToken endpoint', async () => {
     process.env.PAYNOTE_ORANGE_MODE = 'legacy';
-    process.env.PAYNOTE_ORANGE_LEGACY_CUSTOMER_KEY = 'legacy-customer-key';
-    process.env.PAYNOTE_ORANGE_LEGACY_CUSTOMER_SECRET =
-      'legacy-customer-secret';
-    process.env.PAYNOTE_ORANGE_LEGACY_X_AUTH_TOKEN = 'legacy-x-auth';
-    process.env.PAYNOTE_ORANGE_LEGACY_CHANNEL_USER_MSISDN = '699000000';
-    process.env.PAYNOTE_ORANGE_LEGACY_PIN = '1234';
+    process.env.PAYNOTE_ORANGE_CUSTOMER_KEY = 'legacy-customer-key';
+    process.env.PAYNOTE_ORANGE_CUSTOMER_SECRET = 'legacy-customer-secret';
+    process.env.PAYNOTE_ORANGE_X_AUTH_TOKEN = 'legacy-x-auth';
+    process.env.PAYNOTE_ORANGE_CHANNEL_USER_MSISDN = '699000000';
+    process.env.PAYNOTE_ORANGE_PIN = '1234';
 
     const service = new PaynoteService();
     global.fetch = jest
@@ -454,9 +452,9 @@ describe('PaynoteService', () => {
 
   it('reports every missing legacy Orange merchant setting', async () => {
     process.env.PAYNOTE_ORANGE_MODE = 'legacy';
-    delete process.env.PAYNOTE_ORANGE_LEGACY_X_AUTH_TOKEN;
-    delete process.env.PAYNOTE_ORANGE_LEGACY_CHANNEL_USER_MSISDN;
-    delete process.env.PAYNOTE_ORANGE_LEGACY_PIN;
+    delete process.env.PAYNOTE_ORANGE_X_AUTH_TOKEN;
+    delete process.env.PAYNOTE_ORANGE_CHANNEL_USER_MSISDN;
+    delete process.env.PAYNOTE_ORANGE_PIN;
 
     const service = new PaynoteService();
     global.fetch = jest.fn() as unknown as typeof fetch;
@@ -468,7 +466,7 @@ describe('PaynoteService', () => {
         orderId: 'ORD-LEGACY-MISSING',
         description: 'Configuration incomplete',
       }),
-    ).rejects.toThrow('PAYNOTE_ORANGE_LEGACY_X_AUTH_TOKEN');
+    ).rejects.toThrow('PAYNOTE_ORANGE_X_AUTH_TOKEN');
     expect(global.fetch).not.toHaveBeenCalled();
   });
 });
