@@ -399,7 +399,7 @@ describe('PaynoteService', () => {
     );
     expect(JSON.parse(calls[2][1].body)).toEqual({
       notifUrl: 'https://mysite.com/notif?token=test-webhook-secret',
-      channelUserMsisdn: '699000000',
+      channelUserMsisdn: '237699000000',
       amount: '1000',
       subscriberMsisdn: '692000000',
       pin: '1234',
@@ -468,5 +468,43 @@ describe('PaynoteService', () => {
       }),
     ).rejects.toThrow('PAYNOTE_ORANGE_X_AUTH_TOKEN');
     expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  it('turns a legacy Orange business 401 into a merchant configuration error', async () => {
+    process.env.PAYNOTE_ORANGE_MODE = 'legacy';
+    process.env.PAYNOTE_ORANGE_CUSTOMER_KEY = 'legacy-customer-key';
+    process.env.PAYNOTE_ORANGE_CUSTOMER_SECRET = 'legacy-customer-secret';
+    process.env.PAYNOTE_ORANGE_X_AUTH_TOKEN = 'legacy-x-auth';
+    process.env.PAYNOTE_ORANGE_CHANNEL_USER_MSISDN = '237699000000';
+    process.env.PAYNOTE_ORANGE_PIN = '1234';
+
+    const service = new PaynoteService();
+    global.fetch = jest
+      .fn()
+      .mockResolvedValueOnce(tokenResponse('legacy-access-token'))
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ data: { payToken: 'MP-LEGACY-401' } }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          statusCode: 401,
+          message: "could not verify client's id",
+        }),
+      }) as unknown as typeof fetch;
+
+    await expect(
+      service.orangePay({
+        amount: 1000,
+        subscriberMsisdn: '692000000',
+        orderId: 'ORD-LEGACY-401',
+        description: 'Erreur identite marchande',
+      }),
+    ).rejects.toMatchObject({
+      status: 401,
+      operation: 'orange:pay',
+      message: expect.stringContaining('identite marchande'),
+    });
   });
 });

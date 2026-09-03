@@ -64,18 +64,29 @@ validate_configuration() {
   if [[ "$payment_provider" == "paynote" ]]; then
     local webhook_secret webhook_url orange_webhook_url mtn_webhook_url
     local orange_client_id orange_client_secret orange_customer_key orange_customer_secret
+    local orange_mode orange_x_auth_token orange_channel_user_msisdn orange_pin
     webhook_secret="$(read_env_value PAYNOTE_WEBHOOK_SECRET)"
     webhook_url="$(read_env_value PAYNOTE_NOTIF_URL)"
+    orange_mode="$(read_env_value PAYNOTE_ORANGE_MODE | tr '[:upper:]' '[:lower:]')"
     orange_client_id="$(read_env_value PAYNOTE_ORANGE_TOKEN_CLIENT_ID)"
     orange_client_secret="$(read_env_value PAYNOTE_ORANGE_TOKEN_CLIENT_SECRET)"
     orange_customer_key="$(read_env_value PAYNOTE_ORANGE_CUSTOMER_KEY)"
     orange_customer_secret="$(read_env_value PAYNOTE_ORANGE_CUSTOMER_SECRET)"
+    orange_x_auth_token="$(read_env_value PAYNOTE_ORANGE_X_AUTH_TOKEN)"
+    orange_channel_user_msisdn="$(read_env_value PAYNOTE_ORANGE_CHANNEL_USER_MSISDN)"
+    orange_pin="$(read_env_value PAYNOTE_ORANGE_PIN)"
 
     [[ -n "$webhook_secret" ]] || fail "PAYNOTE_WEBHOOK_SECRET est obligatoire lorsque Paynote est actif"
-    [[ -n "$orange_client_id" ]] || fail "PAYNOTE_ORANGE_TOKEN_CLIENT_ID est obligatoire avec la nouvelle API Orange"
-    [[ -n "$orange_client_secret" ]] || fail "PAYNOTE_ORANGE_TOKEN_CLIENT_SECRET est obligatoire avec la nouvelle API Orange"
-    [[ -n "$orange_customer_key" ]] || fail "PAYNOTE_ORANGE_CUSTOMER_KEY est obligatoire avec la nouvelle API Orange"
-    [[ -n "$orange_customer_secret" ]] || fail "PAYNOTE_ORANGE_CUSTOMER_SECRET est obligatoire avec la nouvelle API Orange"
+    [[ -n "$orange_customer_key" ]] || fail "PAYNOTE_ORANGE_CUSTOMER_KEY est obligatoire avec Orange"
+    [[ -n "$orange_customer_secret" ]] || fail "PAYNOTE_ORANGE_CUSTOMER_SECRET est obligatoire avec Orange"
+    if [[ "$orange_mode" == "legacy" ]]; then
+      [[ -n "$orange_x_auth_token" ]] || fail "PAYNOTE_ORANGE_X_AUTH_TOKEN est obligatoire avec l'ancienne API Orange"
+      [[ -n "$orange_channel_user_msisdn" ]] || fail "PAYNOTE_ORANGE_CHANNEL_USER_MSISDN est obligatoire avec l'ancienne API Orange"
+      [[ -n "$orange_pin" ]] || fail "PAYNOTE_ORANGE_PIN est obligatoire avec l'ancienne API Orange"
+    else
+      [[ -n "$orange_client_id" ]] || fail "PAYNOTE_ORANGE_TOKEN_CLIENT_ID est obligatoire avec la nouvelle API Orange"
+      [[ -n "$orange_client_secret" ]] || fail "PAYNOTE_ORANGE_TOKEN_CLIENT_SECRET est obligatoire avec la nouvelle API Orange"
+    fi
     if [[ -n "$webhook_url" ]]; then
       [[ "$webhook_url" == "https://${APP_DOMAIN}/api/paynote/webhook"* ]] ||
         fail "PAYNOTE_NOTIF_URL doit utiliser https://${APP_DOMAIN}/api/paynote/webhook"

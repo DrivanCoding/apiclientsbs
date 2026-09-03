@@ -533,6 +533,29 @@ export class PaynoteService {
     return found;
   }
 
+  private assertLegacyOrangeAuthentication(
+    payload: Record<string, unknown>,
+    operation: string,
+  ) {
+    const statusCode = this.findStringField(payload, [
+      'statusCode',
+      'errorCode',
+    ]);
+    if (statusCode !== '401') return;
+
+    const providerMessage = this.findStringField(payload, [
+      'message',
+      'errorMessage',
+      'description',
+    ]);
+    throw new PaynoteProviderError(
+      "L'ancienne API Orange ne reconnait pas l'identite marchande. Verifiez que le X-AUTH-TOKEN, le channelUserMsisdn et le PIN appartiennent au meme ancien contrat active par Paynote.",
+      401,
+      operation,
+      { code: statusCode, message: providerMessage },
+    );
+  }
+
   private isInvalidTokenError(error: unknown): boolean {
     if (!(error instanceof PaynoteProviderError)) return false;
     const code = String(error.fault.code || '').trim();
@@ -723,9 +746,7 @@ export class PaynoteService {
     ).trim();
     const channelUserMsisdn = String(
       process.env.PAYNOTE_ORANGE_CHANNEL_USER_MSISDN || '',
-    )
-      .replace(/\D/g, '')
-      .replace(/^237/, '');
+    ).trim();
     const pin = String(process.env.PAYNOTE_ORANGE_PIN || '').trim();
     const missing: string[] = [];
 
@@ -741,9 +762,9 @@ export class PaynoteService {
         `Configuration ancienne API Orange incomplete: ${missing.join(', ')}`,
       );
     }
-    if (requireMerchantDetails && !/^6\d{8}$/.test(channelUserMsisdn)) {
+    if (requireMerchantDetails && !/^\+?\d{9,15}$/.test(channelUserMsisdn)) {
       throw new Error(
-        'PAYNOTE_ORANGE_CHANNEL_USER_MSISDN doit contenir un numero camerounais de 9 chiffres sans indicatif.',
+        'PAYNOTE_ORANGE_CHANNEL_USER_MSISDN doit etre le numero marchand exact fourni par Paynote.',
       );
     }
 
@@ -780,6 +801,7 @@ export class PaynoteService {
       }),
       'orange',
     );
+    this.assertLegacyOrangeAuthentication(initResponse, 'orange:init');
     const payToken = this.findStringField(initResponse, ['payToken']);
     if (!payToken) {
       throw new Error(
@@ -810,6 +832,7 @@ export class PaynoteService {
       }),
       'orange',
     );
+    this.assertLegacyOrangeAuthentication(paymentResponse, 'orange:pay');
 
     // Expose aussi le payToken au premier niveau pour garantir sa sauvegarde
     // avant le polling et permettre une reprise asynchrone fiable.
@@ -823,7 +846,7 @@ export class PaynoteService {
     const payToken = String(request.messageId || '').trim();
     if (!payToken) throw new Error('payToken Orange requis');
 
-    return this.fetchJsonWithFreshToken(
+    const statusResponse = await this.fetchJsonWithFreshToken(
       config.baseUrl,
       `/omcoreapis/1.0.2/mp/paymentstatus/${encodeURIComponent(payToken)}`,
       (token) => ({
@@ -835,6 +858,8 @@ export class PaynoteService {
       }),
       'orange',
     );
+    this.assertLegacyOrangeAuthentication(statusResponse, 'orange:status');
+    return statusResponse;
   }
 
   async orangePay(request: OrangePayRequest): Promise<Record<string, any>> {
