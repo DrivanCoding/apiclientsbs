@@ -43,6 +43,19 @@ export function missingTransferredDocuments(
   );
 }
 
+export function transferredSourceDocuments(
+  sourceDocuments: Partial<Record<CoreDocumentType, string[]>>,
+  corePaths: Partial<Record<CoreDocumentType, string>>,
+): Partial<Record<CoreDocumentType, string[]>> {
+  const transferred: Partial<Record<CoreDocumentType, string[]>> = {};
+  for (const type of Object.keys(sourceDocuments) as CoreDocumentType[]) {
+    if (isCoreDocumentPath(corePaths[type], type)) {
+      transferred[type] = sourceDocuments[type];
+    }
+  }
+  return transferred;
+}
+
 export async function deleteSourcePreouvertureDocuments(
   sourceDocuments: Partial<Record<CoreDocumentType, string[]>>,
   uploadRoot = join(process.cwd(), 'uploads', 'preouverture'),

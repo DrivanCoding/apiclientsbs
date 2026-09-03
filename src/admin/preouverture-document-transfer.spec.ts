@@ -6,6 +6,7 @@ import {
   deleteSourcePreouvertureDocuments,
   missingTransferredDocuments,
   sourcePreouvertureDocuments,
+  transferredSourceDocuments,
 } from './preouverture-document-transfer';
 
 describe('transfert des documents de preouverture', () => {
@@ -32,6 +33,21 @@ describe('transfert des documents de preouverture', () => {
         signature: 'uploads/clients/42/photo_client/signature.png',
       }),
     ).toEqual(['signature']);
+  });
+
+  it('ne nettoie que les fichiers effectivement transferes', () => {
+    const source = sourcePreouvertureDocuments({
+      photo_profil: '/uploads/preouverture/profil.jpg',
+      signature: '/uploads/preouverture/signature.png',
+    });
+
+    expect(
+      transferredSourceDocuments(source, {
+        photo_client: 'uploads/clients/42/photo_client/profil.jpg',
+      }),
+    ).toEqual({
+      photo_client: ['/uploads/preouverture/profil.jpg'],
+    });
   });
 
   it('supprime la source puis remplace les chemins par ceux du core', async () => {

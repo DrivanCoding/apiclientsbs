@@ -40,6 +40,7 @@ import {
   deleteSourcePreouvertureDocuments,
   missingTransferredDocuments,
   sourcePreouvertureDocuments,
+  transferredSourceDocuments,
 } from './preouverture-document-transfer';
 
 @Injectable()
@@ -523,13 +524,30 @@ export class AdminService {
         sourceDocuments,
         documentPaths,
       );
+      const warnings: string[] = [];
       if (missingDocuments.length > 0) {
-        throw new BadRequestException(
-          `Documents non confirmes par le core banking: ${missingDocuments.join(', ')}`,
+        warnings.push(
+          `documents non transferes: ${missingDocuments.join(', ')}`,
         );
       }
-      await deleteSourcePreouvertureDocuments(sourceDocuments);
+      try {
+        await deleteSourcePreouvertureDocuments(
+          transferredSourceDocuments(sourceDocuments, documentPaths),
+        );
+      } catch (error) {
+        warnings.push(
+          `nettoyage media incomplet: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
       applyCoreDocumentPaths(demande, documentPaths);
+      if (warnings.length > 0) {
+        payload.message_validation = [
+          payload.message_validation,
+          `Avertissement media: ${warnings.join('; ')}`,
+        ]
+          .filter(Boolean)
+          .join(' - ');
+      }
     }
     demande.statut_validation =
       payload.statut_validation ?? demande.statut_validation;
