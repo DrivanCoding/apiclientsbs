@@ -126,6 +126,18 @@ describe('TransactionsService - Paynote Resilient Payment & Webhook', () => {
     );
   });
 
+  it('generates Orange-compatible order IDs of at most 20 characters', () => {
+    const buildOrderId = (service as any).buildOrderId.bind(service) as (
+      prefix: 'COLL' | 'OUV' | 'PRE',
+    ) => string;
+
+    for (const prefix of ['COLL', 'OUV', 'PRE'] as const) {
+      const orderId = buildOrderId(prefix);
+      expect(orderId).toMatch(new RegExp(`^${prefix}[a-z0-9]+$`));
+      expect(orderId.length).toBeLessThanOrEqual(20);
+    }
+  });
+
   it('finalizes a pending deposit, credits the account, and emits notification', async () => {
     const pendingTx: Partial<Transaction> = {
       idtransaction: 1,

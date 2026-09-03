@@ -1749,7 +1749,13 @@ export class TransactionsService {
   }
 
   private buildOrderId(prefix: 'COLL' | 'OUV' | 'PRE') {
-    return `${prefix}-${Date.now()}-${randomBytes(6).toString('hex')}`;
+    // L'ancienne API Orange refuse les orderId de plus de 20 caracteres.
+    // Timestamp base36 + aleatoire 32 bits reste unique tout en permettant
+    // d'utiliser exactement la meme reference en base, chez Orange et dans
+    // les webhooks.
+    const timestamp = Date.now().toString(36).slice(-8);
+    const random = randomBytes(4).toString('hex');
+    return `${prefix}${timestamp}${random}`;
   }
 
   private isAcceptedPendingResult(payment: unknown) {
