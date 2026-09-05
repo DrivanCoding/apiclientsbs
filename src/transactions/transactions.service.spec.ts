@@ -138,6 +138,56 @@ describe('TransactionsService - Paynote Resilient Payment & Webhook', () => {
     }
   });
 
+  it('accepts a pre-opening with only the required client photo', async () => {
+    jest.spyOn(service as any, 'normalizeOperator').mockResolvedValue('momo');
+    jest
+      .spyOn(service as any, 'assertMobileOpeningAllowed')
+      .mockResolvedValue({ plafond: 0, frais_ouverture: 0 });
+    jest
+      .spyOn(service as any, 'collectWithConfiguredGateway')
+      .mockResolvedValue({ provider_state: 'accepted_pending' });
+    mockPreouvertureRepo.findOne.mockResolvedValue(null);
+
+    await service.preouvertureWithDeposit(
+      {
+        nom: 'Client sans piece',
+        telephone_principal: '670000000',
+        montant_initial: 1000,
+        operateur: 'momo',
+        idag: 1,
+        idtype: 1,
+        references: 'PREPHOTOONLY1',
+      },
+      {
+        photo_profil: [{ filename: 'profil.jpg', path: '/tmp/profil.jpg' }],
+      },
+    );
+
+    expect(mockPreouvertureRepo.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        photo_profil: '/uploads/preouverture/profil.jpg',
+        signature: undefined,
+        photo_piece_recto: undefined,
+        photo_piece_verso: undefined,
+        type_piece: undefined,
+        num_piece_identite: undefined,
+      }),
+    );
+  });
+
+  it('still rejects a pre-opening without the client photo', async () => {
+    await expect(
+      service.preouvertureWithDeposit({
+        nom: 'Client sans photo',
+        telephone_principal: '670000000',
+        montant_initial: 1000,
+        operateur: 'momo',
+        idag: 1,
+        idtype: 1,
+      }),
+    ).rejects.toThrow('La photo du client est obligatoire.');
+  });
+
   it('finalizes a pending deposit, credits the account, and emits notification', async () => {
     const pendingTx: Partial<Transaction> = {
       idtransaction: 1,

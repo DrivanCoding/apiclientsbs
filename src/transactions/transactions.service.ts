@@ -643,22 +643,9 @@ export class TransactionsService {
       this.uploadedFileUrl(files, 'photo_piece_recto') ?? legacyPhotoCni;
     const photoPieceVerso = this.uploadedFileUrl(files, 'photo_piece_verso');
 
-    if (!photoProfil || !signature) {
-      this.logger.warn(
-        `Pre-ouverture sans images requises: profil=${Boolean(
-          photoProfil,
-        )}, signature=${Boolean(signature)}`,
-      );
-      throw new BadRequestException(
-        'La photo de profil et la signature sont obligatoires.',
-      );
-    }
-
-    if (dto.type_piece && (!photoPieceRecto || !photoPieceVerso)) {
-      this.logger.warn('Pre-ouverture avec piece sans recto/verso');
-      throw new BadRequestException(
-        'Les images CNI/Passport recto et verso sont obligatoires.',
-      );
+    if (!photoProfil) {
+      this.logger.warn('Pre-ouverture sans photo de profil');
+      throw new BadRequestException('La photo du client est obligatoire.');
     }
 
     const normalizedOperator = await this.normalizeOperator(dto.operateur);
@@ -712,8 +699,7 @@ export class TransactionsService {
         numero_telephone: numeroOperation,
         mot_de_passe: dto.mot_de_passe?.trim() || '',
         type_piece: this.normalizePieceIdentite(dto.type_piece),
-        num_piece_identite:
-          dto.num_piece_identite?.trim() || `TMP-${Date.now()}`,
+        num_piece_identite: dto.num_piece_identite?.trim() || undefined,
         adresse: dto.adresse?.trim() || 'Non renseignee',
         code_postal: dto.code_postal?.trim() || '0000',
         ville: dto.ville?.trim() || 'Non renseignee',
@@ -1718,10 +1704,11 @@ export class TransactionsService {
     };
   }
 
-  private normalizePieceIdentite(value?: string): string {
+  private normalizePieceIdentite(value?: string): string | undefined {
     const normalized = String(value || '')
       .trim()
       .toLowerCase();
+    if (!normalized || normalized === 'aucune piece') return undefined;
     if (normalized === 'passeport') return 'Passeport';
     if (normalized === 'permis') return 'Permis';
     return 'CNI';
