@@ -28,6 +28,7 @@ import { DepositDto } from './dto/deposit.dto';
 import { OuvertureCompteDto } from './dto/ouverture-compte.dto';
 import { PreouvertureDto } from './dto/preouverture.dto';
 import { CollecteSyncNotificationDto } from './dto/collecte-sync-notification.dto';
+import { CoreValidationDto } from './dto/core-validation.dto';
 
 const preouvertureUploadDir = join(process.cwd(), 'uploads', 'preouverture');
 
@@ -164,10 +165,29 @@ export class TransactionsController {
 
   @Get()
   @UseGuards(JwtAuthGuard, AdminRoleGuard)
-  findAll(@Query('page') page?: string, @Query('limit') limit?: string) {
+  findAll(
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+    @Query('payment_status') paymentStatus?: string,
+    @Query('validation_status') validationStatus?: string,
+  ) {
     const pageNum = page ? parseInt(page, 10) : undefined;
     const limitNum = limit ? parseInt(limit, 10) : undefined;
-    return this.service.findAll(pageNum, limitNum);
+    return this.service.findAll(
+      pageNum,
+      limitNum,
+      paymentStatus,
+      validationStatus,
+    );
+  }
+
+  @Patch('core-sync/:id/validation')
+  @UseGuards(JwtAuthGuard, AdminRoleGuard)
+  applyCoreValidation(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: CoreValidationDto,
+  ) {
+    return this.service.applyCoreValidation(id, dto);
   }
 
   @Get('me')

@@ -213,7 +213,85 @@ describe('TransactionsService - Paynote Resilient Payment & Webhook', () => {
     expect(result.success).toBe(true);
     expect(compte.solde).toBe('15000.00');
     expect(pendingTx.statut).toBe('complete');
+    expect(pendingTx.statut_validation).toBe('pending_validation');
     expect(mockNotificationsService.emitCreated).toHaveBeenCalled();
+  });
+
+  it('marks a manually validated Core deposit as posted without changing the mobile balance', async () => {
+    const transaction: Partial<Transaction> = {
+      idtransaction: 6,
+      idcompte: 60,
+      montant_transaction: '2500.00',
+      statut: 'complete',
+      statut_validation: 'pending_validation',
+      type_transaction: 'versement',
+    };
+    mockTxRepo.findOne.mockResolvedValue(transaction);
+
+    const result = await service.applyCoreValidation(6, {
+      status: 'posted',
+      message: 'Validation manuelle',
+    });
+
+    expect(result.status).toBe('posted');
+    expect(transaction.statut_validation).toBe('posted');
+    expect(mockCompteRepo.findOne).not.toHaveBeenCalled();
+  });
+
+  it('reverses the displayed mobile balance and notifies the client on Core rejection', async () => {
+    const transaction: Partial<Transaction> = {
+      idtransaction: 7,
+      idcompte: 70,
+      montant_transaction: '3000.00',
+      statut: 'complete',
+      statut_validation: 'pending_validation',
+      type_transaction: 'versement',
+    };
+    const compte: Partial<Compte> = {
+      idcompte: 70,
+      idclient: 700,
+      numero_compte: 'SB00070',
+      solde: '10000.00',
+    };
+    mockTxRepo.findOne.mockResolvedValue(transaction);
+    mockCompteRepo.findOne.mockResolvedValue(compte);
+
+    const result = await service.applyCoreValidation(7, {
+      status: 'rejected',
+      message: 'Justificatif invalide',
+    });
+
+    expect(result.status).toBe('rejected');
+    expect(compte.solde).toBe('7000.00');
+    expect(transaction.statut).toBe('complete');
+    expect(transaction.statut_validation).toBe('rejected');
+    expect(mockNotificationsService.emitCreated).toHaveBeenCalledWith(
+      expect.objectContaining({
+        idclient: 700,
+        titre: 'Versement rejete',
+      }),
+    );
+  });
+
+  it('does not reverse the mobile balance twice when a Core rejection is retried', async () => {
+    const transaction: Partial<Transaction> = {
+      idtransaction: 8,
+      idcompte: 80,
+      montant_transaction: '3000.00',
+      statut: 'complete',
+      statut_validation: 'rejected',
+      type_transaction: 'versement',
+    };
+    mockTxRepo.findOne.mockResolvedValue(transaction);
+
+    const result = await service.applyCoreValidation(8, {
+      status: 'rejected',
+      message: 'Nouvel essai',
+    });
+
+    expect(result.duplicate).toBe(true);
+    expect(mockCompteRepo.findOne).not.toHaveBeenCalled();
+    expect(mockNotificationsService.emitCreated).not.toHaveBeenCalled();
   });
 
   it('ensures idempotency by not re-crediting an already completed transaction', async () => {

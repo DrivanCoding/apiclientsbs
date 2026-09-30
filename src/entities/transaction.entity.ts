@@ -36,6 +36,19 @@ export class Transaction {
   })
   statut: 'complete' | 'annulee' | 'en_attente';
 
+  @Column({
+    type: 'enum',
+    enum: ['pending_validation', 'posted', 'rejected'],
+    default: 'pending_validation',
+  })
+  statut_validation: 'pending_validation' | 'posted' | 'rejected';
+
+  @Column({ type: 'text', nullable: true })
+  message_validation?: string | null;
+
+  @Column({ type: 'datetime', nullable: true })
+  date_validation?: Date | null;
+
   @Column({ type: 'enum', enum: ['versement', 'retrait'] })
   type_transaction: 'versement' | 'retrait';
 

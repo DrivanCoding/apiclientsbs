@@ -30,6 +30,7 @@ import { DepositDto } from './dto/deposit.dto';
 import { OuvertureCompteDto } from './dto/ouverture-compte.dto';
 import { PreouvertureDto } from './dto/preouverture.dto';
 import { CollecteSyncNotificationDto } from './dto/collecte-sync-notification.dto';
+import { CoreValidationDto } from './dto/core-validation.dto';
 import { randomBytes } from 'crypto';
 
 type PaymentDecision = 'success' | 'pending' | 'failed' | 'unknown';
@@ -81,10 +82,30 @@ export class TransactionsService {
     return this.repository.save(payload);
   }
 
-  findAll(page?: number, limit?: number) {
+  findAll(
+    page?: number,
+    limit?: number,
+    paymentStatus?: string,
+    validationStatus?: string,
+  ) {
     const options: any = {
       order: { idtransaction: 'DESC' },
     };
+    const where: Partial<Transaction> = {};
+    if (['complete', 'annulee', 'en_attente'].includes(paymentStatus || '')) {
+      where.statut = paymentStatus as Transaction['statut'];
+    }
+    if (
+      ['pending_validation', 'posted', 'rejected'].includes(
+        validationStatus || '',
+      )
+    ) {
+      where.statut_validation =
+        validationStatus as Transaction['statut_validation'];
+    }
+    if (Object.keys(where).length > 0) {
+      options.where = where;
+    }
     if (page !== undefined && limit !== undefined) {
       options.skip = (page - 1) * limit;
       options.take = limit;
@@ -226,6 +247,7 @@ export class TransactionsService {
           operateur: normalizedOperator,
           idcompteimpact: operatorLedger?.idcompte_debit,
           statut: 'en_attente',
+          statut_validation: 'pending_validation',
           references,
           description,
         }),
@@ -347,6 +369,7 @@ export class TransactionsService {
         type_transaction: 'versement',
         operateur: 'sbscollecte',
         statut: 'complete',
+        statut_validation: 'posted',
         references: reference || `SBSCOL-${Date.now()}`,
         description: dto.description?.trim() || 'Collecte mobile SBS Collecte',
         date_transaction: dto.date_transaction
@@ -1868,6 +1891,10 @@ export class TransactionsService {
       await manager.save(compte);
 
       transaction.statut = 'complete';
+      transaction.statut_validation = 'pending_validation';
+      transaction.message_validation =
+        'Paiement confirme par l operateur, en attente de validation manuelle dans le Core Banking.';
+      transaction.date_validation = null;
       const savedTransaction = await manager.save(transaction);
 
       const idclient = Number(compte.idclient || 0);
@@ -1895,6 +1922,92 @@ export class TransactionsService {
         message: 'Versement complete avec succes',
       };
     });
+  }
+
+  /**
+   * Applique la decision manuelle prise dans le Core Banking.
+   * Le paiement operateur reste `complete`; seul son statut comptable evolue.
+   * En cas de rejet, le credit d'affichage applique au solde mobile est retire
+   * une seule fois et le client est notifie.
+   */
+  async applyCoreValidation(id: number, dto: CoreValidationDto) {
+    const result = await this.dataSource.transaction(async (manager) => {
+      const transaction = await manager.findOne(Transaction, {
+        where: { idtransaction: id },
+        lock: { mode: 'pessimistic_write' },
+      });
+
+      if (!transaction) {
+        throw new NotFoundException('Transaction SBSClient introuvable');
+      }
+      if (
+        transaction.type_transaction !== 'versement' ||
+        transaction.statut !== 'complete'
+      ) {
+        throw new BadRequestException(
+          'Seul un versement confirme par l operateur peut etre valide ou rejete par le Core Banking.',
+        );
+      }
+
+      if (transaction.statut_validation === dto.status) {
+        return { transaction, notification: null, duplicate: true };
+      }
+      if (transaction.statut_validation !== 'pending_validation') {
+        throw new BadRequestException(
+          `Cette operation est deja ${transaction.statut_validation}.`,
+        );
+      }
+
+      let savedNotification: Notification | null = null;
+      if (dto.status === 'rejected') {
+        const compte = await manager.findOne(Compte, {
+          where: { idcompte: transaction.idcompte },
+          lock: { mode: 'pessimistic_write' },
+        });
+        if (!compte) {
+          throw new NotFoundException('Compte mobile introuvable');
+        }
+
+        const amount = Number(transaction.montant_transaction);
+        const currentBalance = Number(compte.solde || 0);
+        compte.solde = (currentBalance - amount).toFixed(2);
+        await manager.save(compte);
+
+        const reason = dto.message?.trim() || 'Operation rejetee par le Core Banking.';
+        const notification = manager.create(Notification, {
+          idclient: Number(compte.idclient || 0),
+          titre: 'Versement rejete',
+          message: `Votre versement de ${amount.toLocaleString('fr-FR')} XAF sur le compte ${compte.numero_compte} a ete rejete. Motif : ${reason}`,
+          type: 'versement',
+          lu: 0,
+        });
+        if (notification.idclient > 0) {
+          savedNotification = await manager.save(notification);
+        }
+      }
+
+      transaction.statut_validation = dto.status;
+      transaction.message_validation = dto.message?.trim() || null;
+      transaction.date_validation = new Date();
+      const savedTransaction = await manager.save(transaction);
+
+      return {
+        transaction: savedTransaction,
+        notification: savedNotification,
+        duplicate: false,
+      };
+    });
+
+    if (result.notification) {
+      this.notificationsService.emitCreated(result.notification);
+    }
+
+    return {
+      success: true,
+      status: result.transaction.statut_validation,
+      transaction: result.transaction,
+      duplicate: result.duplicate,
+    };
   }
 
   /**
