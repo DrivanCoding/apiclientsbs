@@ -564,12 +564,12 @@ export class PaynoteService {
 
   private getPaymentMethod(scope: PaynoteScope) {
     if (scope === 'orange') {
-      return process.env.PAYNOTE_ORANGE_PAYMENT_METHOD || 'OM_CMR';
+      return process.env.PAYNOTE_ORANGE_PAYMENT_METHOD || 'ORANGE_CMR';
     }
     if (scope === 'mtn') {
       return process.env.PAYNOTE_MTN_PAYMENT_METHOD || 'MTN_CMR';
     }
-    return process.env.PAYNOTE_PAYMENT_METHOD || 'OM_CMR';
+    return process.env.PAYNOTE_PAYMENT_METHOD || 'ORANGE_CMR';
   }
 
   private getStatusPath(scope: PaynoteScope) {

@@ -102,7 +102,7 @@ describe('PaynoteService', () => {
       amount: '1000',
       subscriberMsisdn: '692000000',
       description: 'Paiement test OM',
-      PaiementMethod: 'OM_CMR',
+      PaiementMethod: 'ORANGE_CMR',
       notifUrl: 'https://mysite.com/notif?token=test-webhook-secret',
     });
     expect(calls[1][1].headers.Authorization).toBe('Bearer test-token');
@@ -148,7 +148,7 @@ describe('PaynoteService', () => {
       customerkey: 'test-customer-key',
       customersecret: 'test-customer-secret',
       message_id: 'MP250000123',
-      payment_method: 'OM_CMR',
+      payment_method: 'ORANGE_CMR',
     });
   });
 
@@ -316,7 +316,7 @@ describe('PaynoteService', () => {
     expect(JSON.parse(calls[1][1].body).API_MUT).toMatchObject({
       customerkey: 'orange-customer-key',
       customersecret: 'orange-customer-secret',
-      PaiementMethod: 'OM_CMR',
+      PaiementMethod: 'ORANGE_CMR',
     });
   });
 
