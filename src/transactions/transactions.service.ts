@@ -881,6 +881,10 @@ export class TransactionsService {
           description: payload.description,
         });
 
+        this.logger.log(
+          `[PAYMENT_INIT_OM] Reponse initiation Paynote Orange : ${JSON.stringify(payment)}`,
+        );
+
         const immediateDecision = this.getPaymentDecision(payment);
         if (immediateDecision === 'failed') {
           throw this.classifyPaymentOrKeyError(payment, 'Orange');
@@ -903,6 +907,9 @@ export class TransactionsService {
 
         const confirmed = await this.pollPaymentStatus(async () =>
           this.paynoteService.orangePaymentStatus({ messageId }),
+        );
+        this.logger.log(
+          `[PAYMENT_STATUS_OM] Reponse statut Paynote Orange (decision: ${confirmed.decision}) : ${JSON.stringify(confirmed.payload)}`,
         );
         if (confirmed.decision === 'success') {
           return {
@@ -943,6 +950,10 @@ export class TransactionsService {
         paymentMethod: 'MTN_CMR',
       });
 
+      this.logger.log(
+        `[PAYMENT_INIT_MTN] Reponse initiation Paynote MTN : ${JSON.stringify(payment)}`,
+      );
+
       const immediateDecision = this.getPaymentDecision(payment);
       if (immediateDecision === 'failed') {
         throw this.classifyPaymentOrKeyError(payment, 'MTN');
@@ -963,6 +974,9 @@ export class TransactionsService {
 
       const confirmed = await this.pollPaymentStatus(async () =>
         this.paynoteService.mtnPaymentStatus({ messageId }),
+      );
+      this.logger.log(
+        `[PAYMENT_STATUS_MTN] Reponse statut Paynote MTN (decision: ${confirmed.decision}) : ${JSON.stringify(confirmed.payload)}`,
       );
       if (confirmed.decision === 'success') {
         return {

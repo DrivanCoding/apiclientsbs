@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 
 export type TokenResponse = {
   access_token: string;
@@ -107,6 +107,7 @@ type TokenCacheEntry = {
 
 @Injectable()
 export class PaynoteService {
+  private readonly logger = new Logger(PaynoteService.name);
   private readonly tokenCache = new Map<PaynoteScope, TokenCacheEntry>();
 
   private usesLegacyOrangeApi() {
@@ -431,15 +432,39 @@ export class PaynoteService {
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
     try {
       const url = `${baseUrl}${path}`;
+      if (path.includes('webpayment') || path.includes('/mp/')) {
+        this.logger.log(
+          `[PAYNOTE_HTTP_REQ] ${init.method || 'GET'} ${url} -> Body: ${init.body ? String(init.body) : 'aucun'}`,
+        );
+      }
       const res = await fetch(url, {
         ...init,
         signal: controller.signal,
       });
+      let text = '';
+      let payload: unknown = {};
+      if (typeof res.text === 'function') {
+        text = await res.text().catch(() => '');
+      }
+      if (text) {
+        try {
+          payload = JSON.parse(text);
+        } catch {
+          payload = {};
+        }
+      } else if (typeof res.json === 'function') {
+        payload = await res.json().catch(() => ({}));
+        text = JSON.stringify(payload);
+      }
+
+      if (path.includes('webpayment') || path.includes('/mp/')) {
+        this.logger.log(
+          `[PAYNOTE_HTTP_RES] ${init.method || 'GET'} ${url} -> HTTP ${res.status}: ${text}`,
+        );
+      }
       if (!res.ok) {
-        const text = await res.text().catch(() => '');
         throw this.providerError(path, res.status, text, scope);
       }
-      const payload: unknown = await res.json().catch(() => ({}));
       const record =
         payload && typeof payload === 'object'
           ? (payload as Record<string, unknown>)
