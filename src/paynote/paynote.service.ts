@@ -1230,9 +1230,18 @@ export class PaynoteService {
     const messageId = String(request.messageId || '').trim();
     if (!messageId) throw new Error('message_id requis');
 
-    let paymentMethod = request.paymentMethod || this.getPaymentMethod(scope);
-    if (paymentMethod === 'ORANGE_CMR' || paymentMethod === 'ORANGE') {
-      paymentMethod = 'OM_CMR';
+    let paymentMethod = request.paymentMethod;
+    if (scope === 'orange') {
+      paymentMethod =
+        process.env.PAYNOTE_ORANGE_STATUS_PAYMENT_METHOD || 'ORANGE_CMR';
+    } else if (!paymentMethod) {
+      paymentMethod = this.getPaymentMethod(scope);
+    }
+    if (
+      scope === 'orange' &&
+      (paymentMethod === 'OM_CMR' || paymentMethod === 'OM')
+    ) {
+      paymentMethod = 'ORANGE_CMR';
     }
 
     const statusPath = this.getStatusPath(scope);
@@ -1409,7 +1418,7 @@ export class PaynoteService {
       return this.legacyOrangePaymentStatus(request);
     }
     return this.mutualizedPaymentStatus(
-      { ...request, paymentMethod: this.getPaymentMethod('orange') },
+      { ...request, paymentMethod: 'ORANGE_CMR' },
       'orange',
     );
   }

@@ -153,7 +153,7 @@ describe('PaynoteService', () => {
       customerkey: 'test-customer-key',
       customersecret: 'test-customer-secret',
       message_id: 'MP250000123',
-      payment_method: 'OM_CMR',
+      payment_method: 'ORANGE_CMR',
     });
   });
 
