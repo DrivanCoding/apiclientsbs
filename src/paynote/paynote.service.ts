@@ -981,12 +981,20 @@ export class PaynoteService {
 
   private getPaymentMethod(scope: PaynoteScope) {
     if (scope === 'orange') {
-      return process.env.PAYNOTE_ORANGE_PAYMENT_METHOD || 'ORANGE_CMR';
+      const configured = process.env.PAYNOTE_ORANGE_PAYMENT_METHOD;
+      if (configured && configured !== 'ORANGE_CMR') {
+        return configured;
+      }
+      return 'OM_CMR';
     }
     if (scope === 'mtn') {
       return process.env.PAYNOTE_MTN_PAYMENT_METHOD || 'MTN_CMR';
     }
-    return process.env.PAYNOTE_PAYMENT_METHOD || 'ORANGE_CMR';
+    const general = process.env.PAYNOTE_PAYMENT_METHOD;
+    if (general && general !== 'ORANGE_CMR') {
+      return general;
+    }
+    return 'OM_CMR';
   }
 
   private getStatusPath(scope: PaynoteScope) {
@@ -1120,7 +1128,10 @@ export class PaynoteService {
       request.subscriberMsisdn,
     );
 
-    const paymentMethod = request.paymentMethod || this.getPaymentMethod(scope);
+    let paymentMethod = request.paymentMethod || this.getPaymentMethod(scope);
+    if (paymentMethod === 'ORANGE_CMR' || paymentMethod === 'ORANGE') {
+      paymentMethod = 'OM_CMR';
+    }
 
     const payload = {
       API_MUT: {
@@ -1194,7 +1205,10 @@ export class PaynoteService {
     const messageId = String(request.messageId || '').trim();
     if (!messageId) throw new Error('message_id requis');
 
-    const paymentMethod = request.paymentMethod || this.getPaymentMethod(scope);
+    let paymentMethod = request.paymentMethod || this.getPaymentMethod(scope);
+    if (paymentMethod === 'ORANGE_CMR' || paymentMethod === 'ORANGE') {
+      paymentMethod = 'OM_CMR';
+    }
 
     const statusPath = this.getStatusPath(scope);
 
