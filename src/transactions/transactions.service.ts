@@ -24,7 +24,12 @@ import { Transaction } from '../entities/transaction.entity';
 import { Typecompte } from '../entities/typecompte.entity';
 import { MavianceClient } from '../maviance/maviance.client';
 import { MavianceErrorMapper } from '../maviance/maviance-error.mapper';
-import { PaynoteService } from '../paynote/paynote.service';
+import {
+  PaynoteService,
+  PaynoteProviderError,
+  PaynoteInvalidCredentialsError,
+  PaynoteInvalidPaymentError,
+} from '../paynote/paynote.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { DepositDto } from './dto/deposit.dto';
 import { OuvertureCompteDto } from './dto/ouverture-compte.dto';
@@ -273,15 +278,39 @@ export class TransactionsService {
         },
       });
     } catch (error) {
-      // Si la session synchrone a expiré mais que la demande est partie chez l'opérateur
-      const isPendingTimeout =
+      const errResponse =
         error instanceof BadGatewayException &&
-        (error.message.includes('en attente') ||
-          error.message.includes('non confirme') ||
-          error.message.includes('accepted_pending'));
-      const providerRequestWasCreated = Boolean(pendingTx.provider_message_id);
+        typeof error.getResponse === 'function'
+          ? (error.getResponse() as any)
+          : null;
+      const errMessage =
+        errResponse && typeof errResponse === 'object' && errResponse.message
+          ? String(errResponse.message)
+          : (error as Error)?.message || 'Paiement mobile indisponible';
 
-      if (isPendingTimeout || providerRequestWasCreated) {
+      const isDefinitiveFailure =
+        errMessage.includes('[CLE_INVALIDE]') ||
+        errMessage.includes('[PAIEMENT_INVALIDE]') ||
+        errMessage.includes('rejete') ||
+        errMessage.includes('refuse') ||
+        errMessage.includes('annule') ||
+        Boolean(
+          errResponse &&
+            ['INVALID_CREDENTIALS', 'INVALID_PAYMENT'].includes(
+              errResponse.error,
+            ),
+        );
+
+      // Si la session synchrone a expire mais que la demande est partie chez l'operateur sans rejet definitif
+      const isPendingTimeout =
+        !isDefinitiveFailure &&
+        ((error instanceof BadGatewayException &&
+          (errMessage.includes('en attente') ||
+            errMessage.includes('non confirme') ||
+            errMessage.includes('accepted_pending'))) ||
+          Boolean(pendingTx.provider_message_id));
+
+      if (isPendingTimeout) {
         this.logger.warn(
           `Depot ${references}: attente synchrone expiree. Transaction conservee en 'en_attente'.`,
         );
@@ -294,9 +323,9 @@ export class TransactionsService {
         };
       }
 
-      // En cas de rejet définitif immédiat par l'opérateur
+      // En cas de rejet definitif immediat par l'operateur ou cle invalide
       await this.failPendingDeposit(references, {
-        error: (error as Error)?.message,
+        error: errMessage,
       });
       throw error;
     }
@@ -854,9 +883,7 @@ export class TransactionsService {
 
         const immediateDecision = this.getPaymentDecision(payment);
         if (immediateDecision === 'failed') {
-          throw new BadGatewayException(
-            `Paiement Orange rejete: ${this.summarizePaymentState(payment)}`,
-          );
+          throw this.classifyPaymentOrKeyError(payment, 'Orange');
         }
 
         const messageId = this.extractStringField(payment, [
@@ -869,7 +896,7 @@ export class TransactionsService {
         if (!messageId) {
           if (immediateDecision === 'success') return { payment };
           throw new BadGatewayException(
-            'Paiement Orange initie mais aucun message_id retourne pour verifier le statut',
+            '[ERREUR_FOURNISSEUR] Paiement Orange initie mais aucun message_id retourne pour verifier le statut',
           );
         }
         await payload.onProviderReference?.(messageId);
@@ -897,6 +924,10 @@ export class TransactionsService {
           };
         }
 
+        if (confirmed.decision === 'failed') {
+          throw this.classifyPaymentOrKeyError(confirmed.payload, 'Orange');
+        }
+
         throw new BadGatewayException(
           `Paiement Orange en attente/non confirme: ${this.summarizePaymentState(
             confirmed.payload,
@@ -914,9 +945,7 @@ export class TransactionsService {
 
       const immediateDecision = this.getPaymentDecision(payment);
       if (immediateDecision === 'failed') {
-        throw new BadGatewayException(
-          `Paiement MTN rejete: ${this.summarizePaymentState(payment)}`,
-        );
+        throw this.classifyPaymentOrKeyError(payment, 'MTN');
       }
 
       const messageId = this.extractStringField(payment, [
@@ -927,7 +956,7 @@ export class TransactionsService {
       if (!messageId) {
         if (immediateDecision === 'success') return { payment };
         throw new BadGatewayException(
-          'Paiement MTN initie mais aucun message_id retourne pour verifier le statut',
+          '[ERREUR_FOURNISSEUR] Paiement MTN initie mais aucun message_id retourne pour verifier le statut',
         );
       }
       await payload.onProviderReference?.(messageId);
@@ -957,12 +986,60 @@ export class TransactionsService {
         };
       }
 
+      if (confirmed.decision === 'failed') {
+        throw this.classifyPaymentOrKeyError(confirmed.payload, 'MTN');
+      }
+
       throw new BadGatewayException(
         `Paiement MTN en attente/non confirme: ${this.summarizePaymentState(
           confirmed.payload,
         )}`,
       );
     } catch (error) {
+      if (error instanceof PaynoteInvalidCredentialsError) {
+        this.logger.error(
+          `[PAYNOTE_KEYS_INVALID] Echec transaction ${payload.references} (${payload.operateur.toUpperCase()}) : ${error.message}`,
+        );
+        throw new BadGatewayException({
+          statusCode: 502,
+          error: 'INVALID_CREDENTIALS',
+          category: 'INVALID_CREDENTIALS',
+          message: error.message,
+          operation: error.operation,
+          credentialScope: error.credentialScope,
+          detail: error.fault,
+        });
+      }
+
+      if (error instanceof PaynoteInvalidPaymentError) {
+        this.logger.warn(
+          `[PAYNOTE_PAYMENT_FAILED] Echec transaction ${payload.references} (${payload.operateur.toUpperCase()}) : ${error.message} (motif: ${error.reason})`,
+        );
+        throw new BadGatewayException({
+          statusCode: 502,
+          error: 'INVALID_PAYMENT',
+          category: 'INVALID_PAYMENT',
+          message: error.message,
+          reason: error.reason,
+          operation: error.operation,
+          detail: error.fault,
+        });
+      }
+
+      if (error instanceof PaynoteProviderError) {
+        this.logger.error(
+          `[PAYNOTE_PROVIDER_ERROR] Echec transaction ${payload.references} (${payload.operateur.toUpperCase()}) : ${error.message}`,
+        );
+        throw new BadGatewayException({
+          statusCode: 502,
+          error: 'PROVIDER_ERROR',
+          category: error.category,
+          message: error.message,
+          operation: error.operation,
+          detail: error.fault,
+        });
+      }
+
       const message =
         error instanceof Error ? error.message : 'Paiement mobile indisponible';
       throw new BadGatewayException(message);
@@ -1405,6 +1482,160 @@ export class TransactionsService {
       .map((item) => `${item.key}=${item.value}`);
 
     return compact.length ? compact.join(', ') : 'statut non interpretable';
+  }
+
+  private classifyPaymentOrKeyError(
+    payload: unknown,
+    operatorLabel: string,
+  ): Error {
+    const keyValues = this.extractStatusKeyValues(payload);
+    const combinedText = keyValues
+      .map((item) => `${item.key}=${item.value}`)
+      .join(' ')
+      .toLowerCase();
+    const detail = this.summarizePaymentState(payload);
+
+    // 1. Detection des cles / identifiants invalides
+    const isCredentials =
+      combinedText.includes('401') ||
+      combinedText.includes('403') ||
+      combinedText.includes('900901') ||
+      combinedText.includes('900902') ||
+      combinedText.includes('invalid credentials') ||
+      combinedText.includes('invalid credential') ||
+      combinedText.includes('invalid customer') ||
+      combinedText.includes('invalid customerkey') ||
+      combinedText.includes('invalid customersecret') ||
+      combinedText.includes('unauthorized') ||
+      combinedText.includes('could not verify client') ||
+      combinedText.includes('identite marchande') ||
+      combinedText.includes('x-auth-token') ||
+      combinedText.includes('cle invalide') ||
+      combinedText.includes('clef invalide');
+
+    if (isCredentials) {
+      return new PaynoteInvalidCredentialsError(
+        `[CLE_INVALIDE] Clés marchand Paynote ${operatorLabel} refusées. Vérifiez la configuration des clés de paiement. (${detail})`,
+        401,
+        `${operatorLabel.toLowerCase()}:payment`,
+        { code: 'INVALID_CREDENTIALS', description: detail },
+        'merchant_keys',
+      );
+    }
+
+    // 2. Detection des motifs de paiement invalide
+    if (
+      combinedText.includes('insufficient') ||
+      combinedText.includes('solde insuffisant') ||
+      combinedText.includes('low balance') ||
+      combinedText.includes('fonds insuffisants')
+    ) {
+      return new PaynoteInvalidPaymentError(
+        `[PAIEMENT_INVALIDE] Solde ${operatorLabel} Money insuffisant sur le compte du client. (${detail})`,
+        400,
+        `${operatorLabel.toLowerCase()}:payment`,
+        { description: detail },
+        'INSUFFICIENT_BALANCE',
+      );
+    }
+
+    if (
+      combinedText.includes('subscriber not found') ||
+      combinedText.includes('subscriber invalid') ||
+      combinedText.includes('invalid subscriber') ||
+      combinedText.includes('msisdn not found') ||
+      combinedText.includes('non abonne') ||
+      combinedText.includes('non abonné') ||
+      combinedText.includes('compte inactif') ||
+      combinedText.includes('compte bloque') ||
+      combinedText.includes('compte bloqué') ||
+      combinedText.includes('compte suspendu') ||
+      combinedText.includes('subscriber blocked')
+    ) {
+      return new PaynoteInvalidPaymentError(
+        `[PAIEMENT_INVALIDE] Numéro client non éligible ou inactif sur ${operatorLabel} Money. (${detail})`,
+        400,
+        `${operatorLabel.toLowerCase()}:payment`,
+        { description: detail },
+        'SUBSCRIBER_NOT_FOUND',
+      );
+    }
+
+    if (
+      combinedText.includes('cancelled') ||
+      combinedText.includes('canceled') ||
+      combinedText.includes('annule') ||
+      combinedText.includes('annulé') ||
+      combinedText.includes('declined') ||
+      combinedText.includes('refuse') ||
+      combinedText.includes('refusé') ||
+      combinedText.includes('user reject') ||
+      combinedText.includes('wrong pin') ||
+      combinedText.includes('pin incorrect')
+    ) {
+      return new PaynoteInvalidPaymentError(
+        `[PAIEMENT_INVALIDE] Paiement ${operatorLabel} refusé ou annulé par le client sur son téléphone (ou code PIN incorrect). (${detail})`,
+        400,
+        `${operatorLabel.toLowerCase()}:payment`,
+        { description: detail },
+        'USER_CANCELLED',
+      );
+    }
+
+    if (
+      combinedText.includes('timeout') ||
+      combinedText.includes('expired') ||
+      combinedText.includes('expire') ||
+      combinedText.includes('expiré') ||
+      combinedText.includes('delai depasse') ||
+      combinedText.includes('délai dépassé')
+    ) {
+      return new PaynoteInvalidPaymentError(
+        `[PAIEMENT_INVALIDE] Délai de validation du paiement ${operatorLabel} Money expiré sur le téléphone du client. (${detail})`,
+        408,
+        `${operatorLabel.toLowerCase()}:payment`,
+        { description: detail },
+        'PAYMENT_TIMEOUT',
+      );
+    }
+
+    if (
+      combinedText.includes('amount') ||
+      combinedText.includes('montant') ||
+      combinedText.includes('limit') ||
+      combinedText.includes('plafond')
+    ) {
+      return new PaynoteInvalidPaymentError(
+        `[PAIEMENT_INVALIDE] Montant invalide ou plafond ${operatorLabel} Money dépassé. (${detail})`,
+        400,
+        `${operatorLabel.toLowerCase()}:payment`,
+        { description: detail },
+        'INVALID_AMOUNT',
+      );
+    }
+
+    if (
+      combinedText.includes('duplicate') ||
+      combinedText.includes('already exists') ||
+      combinedText.includes('deja utilise') ||
+      combinedText.includes('déjà utilisé')
+    ) {
+      return new PaynoteInvalidPaymentError(
+        `[PAIEMENT_INVALIDE] Référence de paiement déjà traitée ou commande dupliquée (${operatorLabel}). (${detail})`,
+        400,
+        `${operatorLabel.toLowerCase()}:payment`,
+        { description: detail },
+        'DUPLICATE_TRANSACTION',
+      );
+    }
+
+    return new PaynoteInvalidPaymentError(
+      `[PAIEMENT_INVALIDE] Paiement ${operatorLabel} rejeté par l'opérateur : ${detail}`,
+      400,
+      `${operatorLabel.toLowerCase()}:payment`,
+      { description: detail },
+      'PAYMENT_REJECTED',
+    );
   }
 
   private isProviderAccepted(payload: unknown): boolean {
@@ -2021,7 +2252,6 @@ export class TransactionsService {
     transaction: Transaction | null;
     message: string;
   }> {
-    void providerPayload;
     return this.dataSource.transaction(async (manager) => {
       const transaction = await manager.findOne(Transaction, {
         where: { references: reference },
@@ -2045,9 +2275,21 @@ export class TransactionsService {
       }
 
       transaction.statut = 'annulee';
+      transaction.statut_validation = 'rejected';
+      if (providerPayload) {
+        const errorText =
+          typeof providerPayload === 'string'
+            ? providerPayload
+            : (providerPayload as any)?.error ||
+              (providerPayload as any)?.message ||
+              this.summarizePaymentState(providerPayload);
+        if (errorText) {
+          transaction.message_validation = String(errorText).slice(0, 500);
+        }
+      }
       const saved = await manager.save(transaction);
       this.logger.warn(
-        `failPendingDeposit: Transaction ${reference} marquee 'annulee'.`,
+        `failPendingDeposit: Transaction ${reference} marquee 'annulee' (motif: ${transaction.message_validation || 'non precise'}).`,
       );
       return {
         success: true,
@@ -2177,9 +2419,19 @@ export class TransactionsService {
     }
 
     if (decision === 'failed') {
+      const operatorName =
+        transaction.operateur &&
+        (transaction.operateur.toLowerCase().includes('om') ||
+          transaction.operateur.toLowerCase().includes('orange'))
+          ? 'Orange'
+          : 'MTN';
+      const classifiedError = this.classifyPaymentOrKeyError(
+        verifiedPayload,
+        operatorName,
+      );
       const result = await this.failPendingDeposit(
         transactionReference,
-        verifiedPayload,
+        { error: classifiedError.message },
       );
       return { status: 'processed', outcome: 'failed', details: result };
     }
@@ -2287,8 +2539,18 @@ export class TransactionsService {
       demande.message_validation =
         'Paiement confirme. Demande en attente de validation administrative.';
     } else if (decision === 'failed') {
+      const operatorName =
+        demande.operateur &&
+        (demande.operateur.toLowerCase().includes('om') ||
+          demande.operateur.toLowerCase().includes('orange'))
+          ? 'Orange'
+          : 'MTN';
+      const classifiedError = this.classifyPaymentOrKeyError(
+        verifiedPayload,
+        operatorName,
+      );
       demande.statut_validation = 'payment_failed';
-      demande.message_validation = 'Paiement refuse par l operateur.';
+      demande.message_validation = classifiedError.message;
     } else {
       demande.statut_validation = 'payment_pending';
       demande.message_validation = 'Confirmation operateur en attente.';
@@ -2420,10 +2682,20 @@ export class TransactionsService {
     }
 
     if (decision === 'failed') {
-      await this.failPendingDeposit(references, statusPayload);
+      const operatorName =
+        operator.includes('om') || operator.includes('orange')
+          ? 'Orange'
+          : 'MTN';
+      const classifiedError = this.classifyPaymentOrKeyError(
+        statusPayload,
+        operatorName,
+      );
+      await this.failPendingDeposit(references, {
+        error: classifiedError.message,
+      });
       return {
         status: 'failed',
-        message: 'Paiement rejete par l operateur',
+        message: classifiedError.message,
         transaction,
         statusPayload,
       };

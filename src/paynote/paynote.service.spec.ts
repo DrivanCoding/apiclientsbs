@@ -1,4 +1,9 @@
-import { PaynoteService } from './paynote.service';
+import {
+  PaynoteService,
+  PaynoteInvalidCredentialsError,
+  PaynoteInvalidPaymentError,
+  PaynoteProviderError,
+} from './paynote.service';
 
 const originalFetch = global.fetch;
 const originalEnv = process.env;
@@ -505,6 +510,245 @@ describe('PaynoteService', () => {
       status: 401,
       operation: 'orange:pay',
       message: expect.stringContaining('identite marchande'),
+    });
+  });
+
+  describe('Separation des erreurs de cles invalides vs paiement invalide', () => {
+    it('classe explicitement en PaynoteInvalidCredentialsError toute erreur d identifiants OAuth2', async () => {
+      const service = new PaynoteService();
+
+      global.fetch = jest.fn().mockResolvedValueOnce({
+        ok: false,
+        status: 401,
+        text: async () =>
+          JSON.stringify({
+            fault: {
+              code: '900901',
+              message: 'Invalid Credentials',
+              description: 'Access failure for API: /oauth2/token',
+            },
+          }),
+      }) as unknown as typeof fetch;
+
+      try {
+        await service.orangePay({
+          amount: 1000,
+          subscriberMsisdn: '692000000',
+          orderId: 'ORD-TEST-KEY',
+          description: 'Test cles OAuth',
+        });
+        fail('Devait lever une erreur');
+      } catch (error) {
+        expect(error).toBeInstanceOf(PaynoteInvalidCredentialsError);
+        const credError = error as PaynoteInvalidCredentialsError;
+        expect(credError.category).toBe('INVALID_CREDENTIALS');
+        expect(credError.credentialScope).toBe('oauth2_token');
+        expect(credError.message).toContain('[CLE_INVALIDE]');
+        expect(credError.message).toContain('PAYNOTE_ORANGE_TOKEN_CLIENT_ID');
+      }
+    });
+
+    it('classe explicitement en PaynoteInvalidCredentialsError l absence de customerKey', async () => {
+      delete process.env.PAYNOTE_CUSTOMER_KEY;
+      delete process.env.PAYNOTE_ORANGE_CUSTOMER_KEY;
+      const service = new PaynoteService();
+
+      try {
+        await service.orangePay({
+          amount: 1000,
+          subscriberMsisdn: '692000000',
+          orderId: 'ORD-MISSING-KEY',
+          description: 'Test cle manquante',
+        });
+        fail('Devait lever une erreur');
+      } catch (error) {
+        expect(error).toBeInstanceOf(PaynoteInvalidCredentialsError);
+        const credError = error as PaynoteInvalidCredentialsError;
+        expect(credError.category).toBe('INVALID_CREDENTIALS');
+        expect(credError.credentialScope).toBe('merchant_keys');
+        expect(credError.message).toContain('[CLE_INVALIDE]');
+        expect(credError.message).toContain('PAYNOTE_ORANGE_CUSTOMER_KEY manquant');
+      }
+    });
+
+    it('classe explicitement en PaynoteInvalidCredentialsError un rejet HTTP 401 par /webpayment', async () => {
+      const service = new PaynoteService();
+
+      global.fetch = jest
+        .fn()
+        .mockResolvedValueOnce(tokenResponse('token-ok'))
+        .mockResolvedValueOnce({
+          ok: false,
+          status: 401,
+          text: async () =>
+            JSON.stringify({
+              fault: {
+                code: '401',
+                message: 'Invalid Customer Key or Secret',
+              },
+            }),
+        }) as unknown as typeof fetch;
+
+      try {
+        await service.orangePay({
+          amount: 1000,
+          subscriberMsisdn: '692000000',
+          orderId: 'ORD-BAD-MERCHANT-KEY',
+          description: 'Test cle marchand refusee',
+        });
+        fail('Devait lever une erreur');
+      } catch (error) {
+        expect(error).toBeInstanceOf(PaynoteInvalidCredentialsError);
+        const credError = error as PaynoteInvalidCredentialsError;
+        expect(credError.category).toBe('INVALID_CREDENTIALS');
+        expect(credError.message).toContain('[CLE_INVALIDE]');
+        expect(credError.message).toContain('PAYNOTE_ORANGE_CUSTOMER_KEY');
+      }
+    });
+
+    it('classe explicitement en PaynoteInvalidPaymentError un numero de telephone invalide', async () => {
+      const service = new PaynoteService();
+
+      try {
+        await service.orangePay({
+          amount: 1000,
+          subscriberMsisdn: '12345',
+          orderId: 'ORD-BAD-NUM',
+          description: 'Test mauvais numero',
+        });
+        fail('Devait lever une erreur');
+      } catch (error) {
+        expect(error).toBeInstanceOf(PaynoteInvalidPaymentError);
+        const payError = error as PaynoteInvalidPaymentError;
+        expect(payError.category).toBe('INVALID_PAYMENT');
+        expect(payError.reason).toBe('INVALID_SUBSCRIBER');
+        expect(payError.message).toContain('[PAIEMENT_INVALIDE]');
+        expect(payError.message).toContain('Numero de paiement invalide');
+      }
+    });
+
+    it('classe explicitement en PaynoteInvalidPaymentError un montant hors limites', async () => {
+      const service = new PaynoteService();
+
+      try {
+        await service.orangePay({
+          amount: 5,
+          subscriberMsisdn: '692000000',
+          orderId: 'ORD-BAD-AMOUNT',
+          description: 'Test montant trop faible',
+        });
+        fail('Devait lever une erreur');
+      } catch (error) {
+        expect(error).toBeInstanceOf(PaynoteInvalidPaymentError);
+        const payError = error as PaynoteInvalidPaymentError;
+        expect(payError.category).toBe('INVALID_PAYMENT');
+        expect(payError.reason).toBe('INVALID_AMOUNT');
+        expect(payError.message).toContain('[PAIEMENT_INVALIDE]');
+        expect(payError.message).toContain('Montant Paynote invalide');
+      }
+    });
+
+    it('classe en PaynoteInvalidPaymentError un rejet de solde insuffisant par l operateur', async () => {
+      const service = new PaynoteService();
+
+      global.fetch = jest
+        .fn()
+        .mockResolvedValueOnce(tokenResponse('token-ok'))
+        .mockResolvedValueOnce({
+          ok: false,
+          status: 400,
+          text: async () =>
+            JSON.stringify({
+              code: '400',
+              message: 'Insufficient balance on subscriber account',
+            }),
+        }) as unknown as typeof fetch;
+
+      try {
+        await service.orangePay({
+          amount: 1000,
+          subscriberMsisdn: '692000000',
+          orderId: 'ORD-INSUFFICIENT',
+          description: 'Test solde insuffisant',
+        });
+        fail('Devait lever une erreur');
+      } catch (error) {
+        expect(error).toBeInstanceOf(PaynoteInvalidPaymentError);
+        const payError = error as PaynoteInvalidPaymentError;
+        expect(payError.category).toBe('INVALID_PAYMENT');
+        expect(payError.reason).toBe('INSUFFICIENT_BALANCE');
+        expect(payError.message).toContain('[PAIEMENT_INVALIDE]');
+        expect(payError.message).toContain('Solde Orange Money insuffisant');
+      }
+    });
+
+    it('classe en PaynoteInvalidPaymentError un abonne inexistant sur Orange Money', async () => {
+      const service = new PaynoteService();
+
+      global.fetch = jest
+        .fn()
+        .mockResolvedValueOnce(tokenResponse('token-ok'))
+        .mockResolvedValueOnce({
+          ok: false,
+          status: 400,
+          text: async () =>
+            JSON.stringify({
+              code: '400',
+              message: 'Subscriber not found or unregistered subscriber',
+            }),
+        }) as unknown as typeof fetch;
+
+      try {
+        await service.orangePay({
+          amount: 1000,
+          subscriberMsisdn: '692000000',
+          orderId: 'ORD-NOT-FOUND',
+          description: 'Test abonne introuvable',
+        });
+        fail('Devait lever une erreur');
+      } catch (error) {
+        expect(error).toBeInstanceOf(PaynoteInvalidPaymentError);
+        const payError = error as PaynoteInvalidPaymentError;
+        expect(payError.category).toBe('INVALID_PAYMENT');
+        expect(payError.reason).toBe('SUBSCRIBER_NOT_FOUND');
+        expect(payError.message).toContain('[PAIEMENT_INVALIDE]');
+        expect(payError.message).toContain('Numero client non eligible ou inactif');
+      }
+    });
+
+    it('classe en PaynoteProviderError un crash 500 de la passerelle Paynote', async () => {
+      const service = new PaynoteService();
+
+      global.fetch = jest
+        .fn()
+        .mockResolvedValueOnce(tokenResponse('token-ok'))
+        .mockResolvedValueOnce({
+          ok: false,
+          status: 500,
+          text: async () =>
+            JSON.stringify({
+              code: '500',
+              message: 'Internal Gateway Exception',
+            }),
+        }) as unknown as typeof fetch;
+
+      try {
+        await service.orangePay({
+          amount: 1000,
+          subscriberMsisdn: '692000000',
+          orderId: 'ORD-500',
+          description: 'Test serveur 500',
+        });
+        fail('Devait lever une erreur');
+      } catch (error) {
+        expect(error).toBeInstanceOf(PaynoteProviderError);
+        expect(error).not.toBeInstanceOf(PaynoteInvalidCredentialsError);
+        expect(error).not.toBeInstanceOf(PaynoteInvalidPaymentError);
+        const provError = error as PaynoteProviderError;
+        expect(provError.category).toBe('PROVIDER_ERROR');
+        expect(provError.message).toContain('[ERREUR_FOURNISSEUR]');
+        expect(provError.message).toContain('HTTP 500');
+      }
     });
   });
 });

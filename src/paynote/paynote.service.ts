@@ -37,15 +37,63 @@ export type ProviderFault = {
   description?: string;
 };
 
+export type PaynoteErrorCategory =
+  | 'INVALID_CREDENTIALS'
+  | 'INVALID_PAYMENT'
+  | 'PROVIDER_ERROR';
+
+export type InvalidPaymentReason =
+  | 'INSUFFICIENT_BALANCE'
+  | 'SUBSCRIBER_NOT_FOUND'
+  | 'INVALID_SUBSCRIBER'
+  | 'USER_CANCELLED'
+  | 'PAYMENT_TIMEOUT'
+  | 'INVALID_AMOUNT'
+  | 'DUPLICATE_TRANSACTION'
+  | 'PAYMENT_REJECTED';
+
+export type CredentialScope =
+  | 'oauth2_token'
+  | 'merchant_keys'
+  | 'legacy_merchant'
+  | 'configuration';
+
 export class PaynoteProviderError extends Error {
   constructor(
     message: string,
     readonly status: number,
     readonly operation: string,
-    readonly fault: ProviderFault,
+    readonly fault: ProviderFault = {},
+    readonly category: PaynoteErrorCategory = 'PROVIDER_ERROR',
   ) {
     super(message);
     this.name = 'PaynoteProviderError';
+  }
+}
+
+export class PaynoteInvalidCredentialsError extends PaynoteProviderError {
+  constructor(
+    message: string,
+    status: number,
+    operation: string,
+    fault: ProviderFault = {},
+    readonly credentialScope: CredentialScope = 'merchant_keys',
+  ) {
+    super(message, status, operation, fault, 'INVALID_CREDENTIALS');
+    this.name = 'PaynoteInvalidCredentialsError';
+  }
+}
+
+export class PaynoteInvalidPaymentError extends PaynoteProviderError {
+  constructor(
+    message: string,
+    status: number,
+    operation: string,
+    fault: ProviderFault = {},
+    readonly reason: InvalidPaymentReason = 'PAYMENT_REJECTED',
+  ) {
+    super(message, status, operation, fault, 'INVALID_PAYMENT');
+    this.name = 'PaynoteInvalidPaymentError';
   }
 }
 
@@ -277,8 +325,12 @@ export class PaynoteService {
           : scope === 'mtn'
             ? 'PAYNOTE_MTN_TOKEN_CLIENT_ID/SECRET'
             : 'PAYNOTE_CLIENT_ID/SECRET';
-      throw new Error(
-        `Identifiants OAuth2 Paynote manquants (${credentialPrefix})`,
+      throw new PaynoteInvalidCredentialsError(
+        `[CLE_INVALIDE] Configuration Paynote manquante (${credentialPrefix})`,
+        400,
+        `token:${scope}`,
+        { code: 'MISSING_CREDENTIALS', message: `Missing ${credentialPrefix}` },
+        'oauth2_token',
       );
     }
 
@@ -302,7 +354,7 @@ export class PaynoteService {
       });
       if (!res.ok) {
         const text = await res.text().catch(() => '');
-        throw this.providerError(`token:${scope}`, res.status, text);
+        throw this.providerError(`token:${scope}`, res.status, text, scope);
       }
       const data = (await res.json()) as TokenResponse;
       if (!data?.access_token) {
@@ -322,8 +374,12 @@ export class PaynoteService {
       return data.access_token;
     } catch (error) {
       if (error instanceof Error && error.name === 'AbortError') {
-        throw new Error(
-          `Paynote token timeout (${params.tokenUrl}) apres ${timeoutMs}ms`,
+        throw new PaynoteProviderError(
+          `[ERREUR_FOURNISSEUR] Paynote token timeout (${params.tokenUrl}) apres ${timeoutMs}ms`,
+          504,
+          `token:${scope}`,
+          { code: 'TIMEOUT', message: `Timeout apres ${timeoutMs}ms` },
+          'PROVIDER_ERROR',
         );
       }
       if (error instanceof PaynoteProviderError) {
@@ -331,8 +387,12 @@ export class PaynoteService {
       }
       const message =
         error instanceof Error ? error.message : 'erreur inconnue';
-      throw new Error(
-        `Paynote token fetch failed (${params.tokenUrl}): ${message}`,
+      throw new PaynoteProviderError(
+        `[ERREUR_FOURNISSEUR] Paynote token fetch failed (${params.tokenUrl}): ${message}`,
+        502,
+        `token:${scope}`,
+        { message },
+        'PROVIDER_ERROR',
       );
     } finally {
       clearTimeout(timeout);
@@ -377,16 +437,22 @@ export class PaynoteService {
       });
       if (!res.ok) {
         const text = await res.text().catch(() => '');
-        throw this.providerError(path, res.status, text);
+        throw this.providerError(path, res.status, text, scope);
       }
       const payload: unknown = await res.json().catch(() => ({}));
-      return payload && typeof payload === 'object'
-        ? (payload as Record<string, unknown>)
-        : {};
+      const record =
+        payload && typeof payload === 'object'
+          ? (payload as Record<string, unknown>)
+          : {};
+      return this.assertNoInitError(record, path, scope);
     } catch (error) {
       if (error instanceof Error && error.name === 'AbortError') {
-        throw new Error(
-          `Paynote timeout (${baseUrl}${path}) apres ${timeoutMs}ms`,
+        throw new PaynoteProviderError(
+          `[ERREUR_FOURNISSEUR] Paynote timeout (${baseUrl}${path}) apres ${timeoutMs}ms`,
+          504,
+          path,
+          { code: 'TIMEOUT', message: `Timeout apres ${timeoutMs}ms` },
+          'PROVIDER_ERROR',
         );
       }
       if (error instanceof PaynoteProviderError) {
@@ -394,45 +460,257 @@ export class PaynoteService {
       }
       const message =
         error instanceof Error ? error.message : 'erreur inconnue';
-      throw new Error(`Paynote fetch failed (${baseUrl}${path}): ${message}`);
+      throw new PaynoteProviderError(
+        `[ERREUR_FOURNISSEUR] Paynote fetch failed (${baseUrl}${path}): ${message}`,
+        502,
+        path,
+        { message },
+        'PROVIDER_ERROR',
+      );
     } finally {
       clearTimeout(timeout);
     }
+  }
+
+  private assertNoInitError(
+    payload: Record<string, unknown>,
+    path: string,
+    scope: PaynoteScope,
+  ): Record<string, unknown> {
+    // Ne s'applique qu'a l'initiation de paiement mutualise (/webpayment)
+    if (!path.endsWith('/webpayment')) {
+      return payload;
+    }
+
+    const code = this.findStringField(payload, [
+      'StatusCode',
+      'ErrorCode',
+      'errorCode',
+      'statusCode',
+      'code',
+    ]);
+    const message = this.findStringField(payload, [
+      'ErrorMessage',
+      'errorMessage',
+      'message',
+      'body',
+      'description',
+      'Reason',
+    ]);
+
+    const isSuccess =
+      (code === '200' || code === '201' || !code) &&
+      (String(payload.body || '').toLowerCase().includes('accepted') ||
+        Boolean(this.findStringField(payload, ['MessageId', 'message_id', 'messageId'])));
+
+    if (isSuccess) {
+      return payload;
+    }
+
+    const errorText = `${code} ${message}`.toLowerCase();
+
+    // Verification des cles invalides dans le corps JSON
+    if (
+      code === '401' ||
+      code === '403' ||
+      code === '900901' ||
+      code === '900902' ||
+      errorText.includes('invalid credentials') ||
+      errorText.includes('invalid customer') ||
+      errorText.includes('invalid customerkey') ||
+      errorText.includes('invalid customersecret') ||
+      errorText.includes('customerkey') ||
+      errorText.includes('customersecret') ||
+      errorText.includes('unauthorized') ||
+      errorText.includes('could not verify client')
+    ) {
+      throw this.providerError(
+        path,
+        code ? Number(code) || 401 : 401,
+        JSON.stringify(payload),
+        scope,
+      );
+    }
+
+    const failure = this.detectPaymentFailureReason(
+      errorText,
+      message,
+      scope === 'orange' ? 'Orange' : scope === 'mtn' ? 'MTN' : 'Paynote',
+    );
+    if (failure) {
+      throw new PaynoteInvalidPaymentError(
+        failure.message,
+        code ? Number(code) || 400 : 400,
+        path,
+        { code, message },
+        failure.reason,
+      );
+    }
+
+    if (code && !['200', '201', '0'].includes(code)) {
+      throw this.providerError(
+        path,
+        Number(code) || 400,
+        JSON.stringify(payload),
+        scope,
+      );
+    }
+
+    return payload;
   }
 
   private providerError(
     operation: string,
     status: number,
     rawBody: string,
+    scope: PaynoteScope = 'general',
   ): PaynoteProviderError {
     const fault = this.extractProviderFault(rawBody);
     const code = String(fault.code || '').trim();
     const message = String(fault.message || '').trim();
     const description = String(fault.description || '').trim();
+    const fullText = `${code} ${message} ${description} ${rawBody}`.toLowerCase();
 
-    if (status === 401 || code === '900901') {
+    const effectiveScope: PaynoteScope =
+      operation.includes('orange') || scope === 'orange'
+        ? 'orange'
+        : operation.includes('mtn') || scope === 'mtn'
+          ? 'mtn'
+          : scope;
+    const scopeLabel =
+      effectiveScope === 'orange'
+        ? 'Orange'
+        : effectiveScope === 'mtn'
+          ? 'MTN'
+          : 'Paynote';
+
+    // 1. Detection des erreurs de cles / identifiants / authentification
+    const isCredentialsError =
+      status === 401 ||
+      status === 403 ||
+      code === '900901' ||
+      code === '900902' ||
+      code === '401' ||
+      code === '403' ||
+      fullText.includes('invalid credentials') ||
+      fullText.includes('invalid credential') ||
+      fullText.includes('invalid customer') ||
+      fullText.includes('invalid customerkey') ||
+      fullText.includes('invalid customersecret') ||
+      fullText.includes('invalid_client') ||
+      fullText.includes('unauthorized') ||
+      fullText.includes('access denied') ||
+      fullText.includes('customerkey') ||
+      fullText.includes('customersecret') ||
+      fullText.includes('bad client credentials') ||
+      fullText.includes('could not verify client') ||
+      fullText.includes('identite marchande') ||
+      fullText.includes('x-auth-token') ||
+      fullText.includes('cle invalide') ||
+      fullText.includes('clef invalide');
+
+    if (isCredentialsError) {
       const isLegacyOrange =
         this.usesLegacyOrangeApi() &&
         (operation === 'token:orange' || operation.includes('/omcoreapis/'));
-      const message = isLegacyOrange
-        ? operation.startsWith('token:')
-          ? "Authentification ancienne API Orange refusee. Verifiez l'ancienne CustomerKey et l'ancien CustomerSecret fournis par Paynote."
-          : "Authentification ancienne API Orange refusee. Verifiez le X-AUTH-TOKEN et l'acces marchand fournis par Paynote."
-        : operation.startsWith('token:')
-          ? 'Authentification Paynote refusee lors de la generation du jeton. Verifiez le ClientId et le ClientSecret du nouvel acces OAuth2 de cet operateur.'
-          : 'Authentification Paynote refusee lors de la requete de paiement. Verifiez les nouvelles valeurs CustomerKey et CustomerSecret de cet operateur.';
-      return new PaynoteProviderError(message, status, operation, fault);
-    }
 
-    if (code === '900902') {
-      return new PaynoteProviderError(
-        'Identifiants Paynote manquants. Verifiez le header Authorization.',
+      if (isLegacyOrange) {
+        const msg = operation.startsWith('token:')
+          ? "[CLE_INVALIDE] Authentification ancienne API Orange refusee. Verifiez l'ancienne CustomerKey et l'ancien CustomerSecret fournis par Paynote."
+          : "[CLE_INVALIDE] Authentification ancienne API Orange refusee. Verifiez le X-AUTH-TOKEN et l'acces marchand fournis par Paynote.";
+        return new PaynoteInvalidCredentialsError(
+          msg,
+          status,
+          operation,
+          fault,
+          isLegacyOrange ? 'legacy_merchant' : 'merchant_keys',
+        );
+      }
+
+      const isOAuthTokenFault =
+        operation.startsWith('token:') ||
+        code === '900901' ||
+        code === '900902' ||
+        description.toLowerCase().includes('access failure for api') ||
+        message.toLowerCase().includes('access failure for api');
+
+      if (isOAuthTokenFault) {
+        const clientIdVar =
+          effectiveScope === 'orange'
+            ? 'PAYNOTE_ORANGE_TOKEN_CLIENT_ID'
+            : effectiveScope === 'mtn'
+              ? 'PAYNOTE_MTN_TOKEN_CLIENT_ID'
+              : 'PAYNOTE_CLIENT_ID';
+        const clientSecretVar =
+          effectiveScope === 'orange'
+            ? 'PAYNOTE_ORANGE_TOKEN_CLIENT_SECRET'
+            : effectiveScope === 'mtn'
+              ? 'PAYNOTE_MTN_TOKEN_CLIENT_SECRET'
+              : 'PAYNOTE_CLIENT_SECRET';
+        const detailSuffix =
+          message || description ? ` Detail: ${message || description}.` : '';
+        const actionLabel = operation.startsWith('token:')
+          ? 'generation du jeton'
+          : 'validation du jeton d acces';
+        return new PaynoteInvalidCredentialsError(
+          `[CLE_INVALIDE] Authentification Paynote refusee lors de la ${actionLabel}. Verifiez le ClientId (${clientIdVar}) et le ClientSecret (${clientSecretVar}) du nouvel acces OAuth2 de cet operateur.${detailSuffix}`,
+          status,
+          operation,
+          fault,
+          'oauth2_token',
+        );
+      }
+
+      const keyVar =
+        effectiveScope === 'orange'
+          ? 'PAYNOTE_ORANGE_CUSTOMER_KEY'
+          : effectiveScope === 'mtn'
+            ? 'PAYNOTE_MTN_CUSTOMER_KEY'
+            : 'PAYNOTE_CUSTOMER_KEY';
+      const secretVar =
+        effectiveScope === 'orange'
+          ? 'PAYNOTE_ORANGE_CUSTOMER_SECRET'
+          : effectiveScope === 'mtn'
+            ? 'PAYNOTE_MTN_CUSTOMER_SECRET'
+            : 'PAYNOTE_CUSTOMER_SECRET';
+      const detailSuffix =
+        message || description ? ` Detail: ${message || description}.` : '';
+      return new PaynoteInvalidCredentialsError(
+        `[CLE_INVALIDE] Authentification Paynote refusee lors de la requete de paiement. Verifiez les nouvelles valeurs CustomerKey (${keyVar}) et CustomerSecret (${secretVar}) de cet operateur.${detailSuffix}`,
         status,
         operation,
         fault,
+        'merchant_keys',
       );
     }
 
+    if (code === '900902') {
+      return new PaynoteInvalidCredentialsError(
+        '[CLE_INVALIDE] Identifiants Paynote manquants. Verifiez le header Authorization.',
+        status,
+        operation,
+        fault,
+        'oauth2_token',
+      );
+    }
+
+    // 2. Detection des erreurs de paiement invalide (solde, numero, annulation, timeout, montant)
+    const paymentFailure = this.detectPaymentFailureReason(
+      fullText,
+      message || description,
+      scopeLabel,
+    );
+    if (paymentFailure) {
+      return new PaynoteInvalidPaymentError(
+        paymentFailure.message,
+        status,
+        operation,
+        fault,
+        paymentFailure.reason,
+      );
+    }
+
+    // 3. Erreur fournisseur generique (Passerelle Paynote, reseau, etc.)
     const suffix = code
       ? ` Code fournisseur: ${code}.`
       : message || description
@@ -440,11 +718,133 @@ export class PaynoteService {
         : '';
 
     return new PaynoteProviderError(
-      `Service Paynote indisponible (HTTP ${status}).${suffix}`,
+      `[ERREUR_FOURNISSEUR] Service Paynote indisponible (HTTP ${status}).${suffix}`,
       status,
       operation,
       fault,
+      'PROVIDER_ERROR',
     );
+  }
+
+  private detectPaymentFailureReason(
+    text: string,
+    rawDetail?: string,
+    operatorLabel: string = 'Orange',
+  ): { reason: InvalidPaymentReason; message: string } | null {
+    const lower = text.toLowerCase();
+
+    // Solde insuffisant
+    if (
+      lower.includes('insufficient') ||
+      lower.includes('solde insuffisant') ||
+      lower.includes('low balance') ||
+      lower.includes('not enough balance') ||
+      lower.includes('fonds insuffisants')
+    ) {
+      return {
+        reason: 'INSUFFICIENT_BALANCE',
+        message: `[PAIEMENT_INVALIDE] Solde ${operatorLabel} Money insuffisant sur le compte du client pour effectuer cette transaction.`,
+      };
+    }
+
+    // Abonne invalide / non trouve / inactif
+    if (
+      lower.includes('subscriber not found') ||
+      lower.includes('subscriber invalid') ||
+      lower.includes('invalid subscriber') ||
+      lower.includes('msisdn not found') ||
+      lower.includes('unregistered subscriber') ||
+      lower.includes('non abonne') ||
+      lower.includes('non abonné') ||
+      lower.includes('compte inactif') ||
+      lower.includes('compte bloque') ||
+      lower.includes('compte bloqué') ||
+      lower.includes('compte suspendu') ||
+      lower.includes('subscriber blocked')
+    ) {
+      return {
+        reason: 'SUBSCRIBER_NOT_FOUND',
+        message: `[PAIEMENT_INVALIDE] Numero client non eligible ou inactif sur ${operatorLabel} Money.`,
+      };
+    }
+
+    // Refus / annulation client / mauvais PIN
+    if (
+      lower.includes('cancelled') ||
+      lower.includes('canceled') ||
+      lower.includes('annule') ||
+      lower.includes('annulé') ||
+      lower.includes('declined') ||
+      lower.includes('refuse') ||
+      lower.includes('refusé') ||
+      lower.includes('user reject') ||
+      lower.includes('wrong pin') ||
+      lower.includes('pin incorrect')
+    ) {
+      return {
+        reason: 'USER_CANCELLED',
+        message: `[PAIEMENT_INVALIDE] Paiement ${operatorLabel} refuse ou annule par le client sur son telephone (ou code PIN incorrect).`,
+      };
+    }
+
+    // Timeout / Delai expire
+    if (
+      lower.includes('timeout') ||
+      lower.includes('expired') ||
+      lower.includes('expire') ||
+      lower.includes('expiré') ||
+      lower.includes('delai depasse') ||
+      lower.includes('délai dépassé')
+    ) {
+      return {
+        reason: 'PAYMENT_TIMEOUT',
+        message: `[PAIEMENT_INVALIDE] Delai de validation du paiement ${operatorLabel} Money expire sur le telephone du client.`,
+      };
+    }
+
+    // Montant invalide
+    if (
+      lower.includes('invalid amount') ||
+      lower.includes('montant invalide') ||
+      lower.includes('amount invalid') ||
+      lower.includes('limit') ||
+      lower.includes('plafond') ||
+      lower.includes('out of range')
+    ) {
+      return {
+        reason: 'INVALID_AMOUNT',
+        message: `[PAIEMENT_INVALIDE] Montant invalide ou plafond ${operatorLabel} Money depasse pour ce client.`,
+      };
+    }
+
+    // Doublon
+    if (
+      lower.includes('duplicate') ||
+      lower.includes('already exists') ||
+      lower.includes('deja utilise') ||
+      lower.includes('déjà utilisé')
+    ) {
+      return {
+        reason: 'DUPLICATE_TRANSACTION',
+        message: `[PAIEMENT_INVALIDE] Reference de paiement deja traitee ou commande dupliquee (${operatorLabel}).`,
+      };
+    }
+
+    // Rejet generique avec detail
+    if (
+      lower.includes('fail') ||
+      lower.includes('echec') ||
+      lower.includes('échec') ||
+      lower.includes('reject')
+    ) {
+      const detail = (rawDetail || '').trim();
+      return {
+        reason: 'PAYMENT_REJECTED',
+        message: `[PAIEMENT_INVALIDE] Paiement ${operatorLabel} rejete par l operateur${detail ? ` : ${detail}` : '.'}`,
+      };
+    }
+
+    return null;
   }
 
   private extractProviderFault(rawBody: string): ProviderFault {
@@ -548,18 +948,35 @@ export class PaynoteService {
       'errorMessage',
       'description',
     ]);
-    throw new PaynoteProviderError(
-      "L'ancienne API Orange ne reconnait pas l'identite marchande. Verifiez que le X-AUTH-TOKEN, le channelUserMsisdn et le PIN appartiennent au meme ancien contrat active par Paynote.",
+    throw new PaynoteInvalidCredentialsError(
+      "[CLE_INVALIDE] L'ancienne API Orange ne reconnait pas l'identite marchande. Verifiez que le X-AUTH-TOKEN, le channelUserMsisdn et le PIN appartiennent au meme ancien contrat active par Paynote.",
       401,
       operation,
       { code: statusCode, message: providerMessage },
+      'legacy_merchant',
     );
   }
 
   private isInvalidTokenError(error: unknown): boolean {
     if (!(error instanceof PaynoteProviderError)) return false;
-    const code = String(error.fault.code || '').trim();
-    return error.status === 401 || code === '900901' || code === '900902';
+    if (
+      error instanceof PaynoteInvalidCredentialsError &&
+      error.credentialScope === 'merchant_keys'
+    ) {
+      return false;
+    }
+    const code = String(error.fault?.code || '').trim();
+    const desc = String(error.fault?.description || '').toLowerCase();
+    const msg = String(error.fault?.message || '').toLowerCase();
+    return (
+      code === '900901' ||
+      code === '900902' ||
+      desc.includes('access failure for api') ||
+      desc.includes('token expired') ||
+      msg.includes('token expired') ||
+      (error instanceof PaynoteInvalidCredentialsError &&
+        error.credentialScope === 'oauth2_token')
+    );
   }
 
   private getPaymentMethod(scope: PaynoteScope) {
@@ -589,8 +1006,12 @@ export class PaynoteService {
     let digits = String(value || '').replace(/\D/g, '');
     if (digits.startsWith('237')) digits = digits.slice(3);
     if (!/^6\d{8}$/.test(digits)) {
-      throw new Error(
-        'Numero de paiement invalide. Utilisez un numero camerounais de 9 chiffres commencant par 6.',
+      throw new PaynoteInvalidPaymentError(
+        '[PAIEMENT_INVALIDE] Numero de paiement invalide. Utilisez un numero camerounais de 9 chiffres commencant par 6.',
+        400,
+        'validation:subscriberMsisdn',
+        { code: 'INVALID_SUBSCRIBER_FORMAT' },
+        'INVALID_SUBSCRIBER',
       );
     }
     return digits;
@@ -609,8 +1030,12 @@ export class PaynoteService {
         : process.env.PAYNOTE_MTN_MAX_AMOUNT || 500000,
     );
     if (!Number.isSafeInteger(amount) || amount < min || amount > max) {
-      throw new Error(
-        `Montant Paynote invalide. Le montant doit etre un entier compris entre ${min} et ${max} XAF.`,
+      throw new PaynoteInvalidPaymentError(
+        `[PAIEMENT_INVALIDE] Montant Paynote invalide. Le montant doit etre un entier compris entre ${min} et ${max} XAF.`,
+        400,
+        'validation:amount',
+        { code: 'INVALID_AMOUNT' },
+        'INVALID_AMOUNT',
       );
     }
     return String(amount);
@@ -656,8 +1081,37 @@ export class PaynoteService {
       request.customerSecret || this.getCustomerSecret(scope);
     const rawNotifUrl = request.notifUrl || this.getNotifUrl(scope);
 
-    if (!customerKey) throw new Error('PAYNOTE_CUSTOMER_KEY manquant');
-    if (!customerSecret) throw new Error('PAYNOTE_CUSTOMER_SECRET manquant');
+    const keyVar =
+      scope === 'orange'
+        ? 'PAYNOTE_ORANGE_CUSTOMER_KEY'
+        : scope === 'mtn'
+          ? 'PAYNOTE_MTN_CUSTOMER_KEY'
+          : 'PAYNOTE_CUSTOMER_KEY';
+    const secretVar =
+      scope === 'orange'
+        ? 'PAYNOTE_ORANGE_CUSTOMER_SECRET'
+        : scope === 'mtn'
+          ? 'PAYNOTE_MTN_CUSTOMER_SECRET'
+          : 'PAYNOTE_CUSTOMER_SECRET';
+
+    if (!customerKey) {
+      throw new PaynoteInvalidCredentialsError(
+        `[CLE_INVALIDE] Configuration Paynote incomplete : ${keyVar} manquant`,
+        400,
+        `${scope}:pay`,
+        { code: 'MISSING_CUSTOMER_KEY', message: `${keyVar} manquant` },
+        'merchant_keys',
+      );
+    }
+    if (!customerSecret) {
+      throw new PaynoteInvalidCredentialsError(
+        `[CLE_INVALIDE] Configuration Paynote incomplete : ${secretVar} manquant`,
+        400,
+        `${scope}:pay`,
+        { code: 'MISSING_CUSTOMER_SECRET', message: `${secretVar} manquant` },
+        'merchant_keys',
+      );
+    }
     if (!rawNotifUrl) throw new Error('PAYNOTE_NOTIF_URL manquant');
 
     const notifUrl = this.validateNotifUrl(rawNotifUrl);
@@ -705,8 +1159,37 @@ export class PaynoteService {
     const customerSecret =
       request.customerSecret || this.getCustomerSecret(scope);
 
-    if (!customerKey) throw new Error('PAYNOTE_CUSTOMER_KEY manquant');
-    if (!customerSecret) throw new Error('PAYNOTE_CUSTOMER_SECRET manquant');
+    const keyVar =
+      scope === 'orange'
+        ? 'PAYNOTE_ORANGE_CUSTOMER_KEY'
+        : scope === 'mtn'
+          ? 'PAYNOTE_MTN_CUSTOMER_KEY'
+          : 'PAYNOTE_CUSTOMER_KEY';
+    const secretVar =
+      scope === 'orange'
+        ? 'PAYNOTE_ORANGE_CUSTOMER_SECRET'
+        : scope === 'mtn'
+          ? 'PAYNOTE_MTN_CUSTOMER_SECRET'
+          : 'PAYNOTE_CUSTOMER_SECRET';
+
+    if (!customerKey) {
+      throw new PaynoteInvalidCredentialsError(
+        `[CLE_INVALIDE] Configuration Paynote incomplete : ${keyVar} manquant`,
+        400,
+        `${scope}:status`,
+        { code: 'MISSING_CUSTOMER_KEY', message: `${keyVar} manquant` },
+        'merchant_keys',
+      );
+    }
+    if (!customerSecret) {
+      throw new PaynoteInvalidCredentialsError(
+        `[CLE_INVALIDE] Configuration Paynote incomplete : ${secretVar} manquant`,
+        400,
+        `${scope}:status`,
+        { code: 'MISSING_CUSTOMER_SECRET', message: `${secretVar} manquant` },
+        'merchant_keys',
+      );
+    }
 
     const messageId = String(request.messageId || '').trim();
     if (!messageId) throw new Error('message_id requis');
@@ -758,13 +1241,21 @@ export class PaynoteService {
       missing.push('PAYNOTE_ORANGE_PIN');
     }
     if (missing.length) {
-      throw new Error(
-        `Configuration ancienne API Orange incomplete: ${missing.join(', ')}`,
+      throw new PaynoteInvalidCredentialsError(
+        `[CLE_INVALIDE] Configuration ancienne API Orange incomplete: ${missing.join(', ')}`,
+        400,
+        'orange:legacy_config',
+        { code: 'MISSING_LEGACY_CONFIG', message: missing.join(', ') },
+        'legacy_merchant',
       );
     }
     if (requireMerchantDetails && !/^\+?\d{9,15}$/.test(channelUserMsisdn)) {
-      throw new Error(
+      throw new PaynoteInvalidPaymentError(
         'PAYNOTE_ORANGE_CHANNEL_USER_MSISDN doit etre le numero marchand exact fourni par Paynote.',
+        400,
+        'orange:legacy_config',
+        { code: 'INVALID_MERCHANT_MSISDN' },
+        'INVALID_SUBSCRIBER',
       );
     }
 

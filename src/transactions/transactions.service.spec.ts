@@ -11,7 +11,12 @@ import { PreouvertureClientTampon } from '../entities/preouverture-client-tampon
 import { Setting } from '../entities/setting.entity';
 import { Typecompte } from '../entities/typecompte.entity';
 import { ListeOperator } from '../entities/liste-operator.entity';
-import { PaynoteService } from '../paynote/paynote.service';
+import {
+  PaynoteService,
+  PaynoteInvalidCredentialsError,
+  PaynoteInvalidPaymentError,
+} from '../paynote/paynote.service';
+import { BadGatewayException } from '@nestjs/common';
 import { MavianceClient } from '../maviance/maviance.client';
 import { NotificationsService } from '../notifications/notifications.service';
 
@@ -518,5 +523,162 @@ describe('TransactionsService - Paynote Resilient Payment & Webhook', () => {
     });
     expect(demande.statut_validation).toBe('pending_validation');
     expect(mockOuvertureRepo.save).toHaveBeenCalledWith(demande);
+  });
+
+  describe('Separation des erreurs dans deposit (cles invalides vs paiement invalide)', () => {
+    it('echoue immediatement un depot Orange avec code INVALID_CREDENTIALS si les cles sont invalides', async () => {
+      const pendingTx: any = {
+        idtransaction: 10,
+        idcompte: 50,
+        references: 'COLL-BAD-KEY',
+        montant_transaction: '1000.00',
+        statut: 'en_attente',
+        type_transaction: 'versement',
+        operateur: 'om',
+      };
+      mockTxRepo.findOne.mockResolvedValue(null);
+      mockTxRepo.save.mockResolvedValue(pendingTx);
+      mockCompteRepo.findOne.mockResolvedValue({
+        idcompte: 50,
+        idclient: 88,
+        solde: '1000.00',
+      });
+      jest.spyOn(service as any, 'normalizeOperator').mockResolvedValue('om');
+      jest.spyOn(service as any, 'findActiveOperatorLedger').mockResolvedValue(null);
+      jest.spyOn(service as any, 'assertMobileDepositAllowed').mockResolvedValue(undefined);
+      jest.spyOn(service as any, 'getConfiguredPaymentGateway').mockReturnValue('paynote');
+
+      mockPaynoteService.orangePay.mockRejectedValue(
+        new PaynoteInvalidCredentialsError(
+          '[CLE_INVALIDE] Clés marchand Paynote Orange refusées lors de la requête de paiement.',
+          401,
+          'orange:pay',
+          { code: '900901' },
+          'merchant_keys',
+        ),
+      );
+
+      const failSpy = jest.spyOn(service, 'failPendingDeposit');
+
+      try {
+        await service.deposit(
+          {
+            idcompte: 50,
+            montant_transaction: 1000,
+            operateur: 'om',
+            numero_telephone: '692000000',
+            references: 'COLL-BAD-KEY',
+            idclient: 88,
+          },
+          88,
+        );
+        fail('Devait lever BadGatewayException');
+      } catch (err: any) {
+        expect(err).toBeInstanceOf(BadGatewayException);
+        const res = err.getResponse();
+        expect(res.error).toBe('INVALID_CREDENTIALS');
+        expect(res.category).toBe('INVALID_CREDENTIALS');
+        expect(res.message).toContain('[CLE_INVALIDE]');
+        expect(failSpy).toHaveBeenCalledWith(
+          'COLL-BAD-KEY',
+          expect.objectContaining({ error: expect.stringContaining('[CLE_INVALIDE]') }),
+        );
+      }
+    });
+
+    it('echoue immediatement un depot Orange avec code INVALID_PAYMENT si le solde du client est insuffisant', async () => {
+      const pendingTx: any = {
+        idtransaction: 11,
+        idcompte: 50,
+        references: 'COLL-BAD-FUNDS',
+        montant_transaction: '25000.00',
+        statut: 'en_attente',
+        type_transaction: 'versement',
+        operateur: 'om',
+      };
+      mockTxRepo.findOne.mockResolvedValue(null);
+      mockTxRepo.save.mockResolvedValue(pendingTx);
+      mockCompteRepo.findOne.mockResolvedValue({
+        idcompte: 50,
+        idclient: 88,
+        solde: '1000.00',
+      });
+      jest.spyOn(service as any, 'normalizeOperator').mockResolvedValue('om');
+      jest.spyOn(service as any, 'findActiveOperatorLedger').mockResolvedValue(null);
+      jest.spyOn(service as any, 'assertMobileDepositAllowed').mockResolvedValue(undefined);
+      jest.spyOn(service as any, 'getConfiguredPaymentGateway').mockReturnValue('paynote');
+
+      mockPaynoteService.orangePay.mockRejectedValue(
+        new PaynoteInvalidPaymentError(
+          '[PAIEMENT_INVALIDE] Solde Orange Money insuffisant sur le compte du client pour effectuer cette transaction.',
+          400,
+          'orange:pay',
+          { code: '400' },
+          'INSUFFICIENT_BALANCE',
+        ),
+      );
+
+      const failSpy = jest.spyOn(service, 'failPendingDeposit');
+
+      try {
+        await service.deposit(
+          {
+            idcompte: 50,
+            montant_transaction: 25000,
+            operateur: 'om',
+            numero_telephone: '692000000',
+            references: 'COLL-BAD-FUNDS',
+            idclient: 88,
+          },
+          88,
+        );
+        fail('Devait lever BadGatewayException');
+      } catch (err: any) {
+        expect(err).toBeInstanceOf(BadGatewayException);
+        const res = err.getResponse();
+        expect(res.error).toBe('INVALID_PAYMENT');
+        expect(res.category).toBe('INVALID_PAYMENT');
+        expect(res.reason).toBe('INSUFFICIENT_BALANCE');
+        expect(res.message).toContain('[PAIEMENT_INVALIDE]');
+        expect(failSpy).toHaveBeenCalledWith(
+          'COLL-BAD-FUNDS',
+          expect.objectContaining({ error: expect.stringContaining('[PAIEMENT_INVALIDE]') }),
+        );
+      }
+    });
+
+    it('retourne un message clair et classe l erreur lors de recheckTransactionStatus en echec', async () => {
+      const pendingTx: any = {
+        idtransaction: 12,
+        idcompte: 50,
+        references: 'COLL-RECHECK-FAIL',
+        montant_transaction: '3000.00',
+        statut: 'en_attente',
+        type_transaction: 'versement',
+        operateur: 'om',
+        provider_message_id: 'MP-RECHECK-01',
+      };
+      mockTxRepo.findOne.mockResolvedValue(pendingTx);
+      mockPaynoteService.orangePaymentStatus.mockResolvedValue({
+        ErrorCode: 200,
+        parameters: {
+          status: 'FAILED',
+          order_id: 'COLL-RECHECK-FAIL',
+          amount: '3000',
+          message: 'Transaction cancelled by user or wrong pin',
+        },
+      });
+
+      const failSpy = jest.spyOn(service, 'failPendingDeposit');
+      const result = await service.recheckTransactionStatus('COLL-RECHECK-FAIL');
+
+      expect(result.status).toBe('failed');
+      expect(result.message).toContain('[PAIEMENT_INVALIDE]');
+      expect(result.message).toContain('refusé ou annulé par le client');
+      expect(failSpy).toHaveBeenCalledWith(
+        'COLL-RECHECK-FAIL',
+        expect.objectContaining({ error: expect.stringContaining('[PAIEMENT_INVALIDE]') }),
+      );
+    });
   });
 });
