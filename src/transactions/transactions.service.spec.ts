@@ -410,6 +410,97 @@ describe('TransactionsService - Paynote Resilient Payment & Webhook', () => {
     });
   });
 
+  it('rechecks MTN (momo) transaction status via mtnPaymentStatus and never orangePaymentStatus', async () => {
+    const pendingTx: Partial<Transaction> = {
+      idtransaction: 33,
+      idcompte: 30,
+      references: 'COLL-RECHECK-MTN-01',
+      montant_transaction: '1000.00',
+      statut: 'en_attente',
+      type_transaction: 'versement',
+      operateur: 'momo',
+      provider_message_id: 'MTN-MSG-789',
+    };
+
+    const compte: Partial<Compte> = {
+      idcompte: 30,
+      numero_compte: 'SB00030',
+      idclient: 77,
+      solde: '500.00',
+    };
+
+    mockTxRepo.findOne.mockResolvedValue(pendingTx);
+    mockCompteRepo.findOne.mockResolvedValue(compte);
+
+    mockPaynoteService.mtnPaymentStatus.mockResolvedValue({
+      ErrorCode: 200,
+      parameters: {
+        status: 'SUCCESSFUL',
+        amount: '1000',
+      },
+    });
+
+    const result = await service.recheckTransactionStatus(
+      'COLL-RECHECK-MTN-01',
+      77,
+    );
+
+    expect(result.status).toBe('complete');
+    expect(compte.solde).toBe('1500.00');
+    expect(pendingTx.statut).toBe('complete');
+    expect(mockPaynoteService.mtnPaymentStatus).toHaveBeenCalledWith({
+      messageId: 'MTN-MSG-789',
+    });
+    expect(mockPaynoteService.orangePaymentStatus).not.toHaveBeenCalled();
+  });
+
+  it('handles Paynote webhook for MTN (momo) using mtnPaymentStatus and never orangePaymentStatus', async () => {
+    const pendingTx: Partial<Transaction> = {
+      idtransaction: 34,
+      idcompte: 20,
+      references: 'COLL-WEBHOOK-MTN-01',
+      provider_message_id: 'MTN-MSG-456',
+      montant_transaction: '2500.00',
+      statut: 'en_attente',
+      type_transaction: 'versement',
+      operateur: 'momo',
+    };
+
+    const compte: Partial<Compte> = {
+      idcompte: 20,
+      numero_compte: 'SB00020',
+      idclient: 88,
+      solde: '2000.00',
+    };
+
+    mockTxRepo.findOne.mockResolvedValue(pendingTx);
+    mockCompteRepo.findOne.mockResolvedValue(compte);
+    mockPaynoteService.mtnPaymentStatus.mockResolvedValue({
+      ErrorCode: 200,
+      parameters: {
+        status: 'SUCCESSFUL',
+        amount: '2500',
+      },
+    });
+
+    const webhookResult = await service.handlePaynoteWebhook({
+      parameters: {
+        order_id: 'COLL-WEBHOOK-MTN-01',
+        MessageId: 'MTN-MSG-456',
+        amount: '2500',
+      },
+    });
+
+    expect(webhookResult.status).toBe('processed');
+    expect(webhookResult.outcome).toBe('success');
+    expect(compte.solde).toBe('4500.00');
+    expect(pendingTx.statut).toBe('complete');
+    expect(mockPaynoteService.mtnPaymentStatus).toHaveBeenCalledWith({
+      messageId: 'MTN-MSG-456',
+    });
+    expect(mockPaynoteService.orangePaymentStatus).not.toHaveBeenCalled();
+  });
+
   it('does not trust a successful webhook when Paynote still reports pending', async () => {
     const pendingTx: Partial<Transaction> = {
       idtransaction: 4,

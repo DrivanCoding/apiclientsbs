@@ -1254,6 +1254,16 @@ export class TransactionsService {
     return code.toUpperCase();
   }
 
+  private isOrangeOperator(operator?: string): boolean {
+    const normalized = String(operator || '').trim().toLowerCase();
+    return normalized === 'om' || normalized.includes('orange');
+  }
+
+  private isMtnOperator(operator?: string): boolean {
+    const normalized = String(operator || '').trim().toLowerCase();
+    return normalized === 'momo' || normalized.includes('mtn');
+  }
+
   private async readActiveOperatorCodes() {
     const rows = await this.settingRepository.find({
       order: { idsetting: 'DESC' },
@@ -2369,11 +2379,11 @@ export class TransactionsService {
 
     let verifiedPayload: unknown;
     const operator = String(transaction.operateur || '').toLowerCase();
-    if (operator.includes('om') || operator.includes('orange')) {
+    if (this.isOrangeOperator(operator)) {
       verifiedPayload = await this.paynoteService.orangePaymentStatus({
         messageId: providerMessageId,
       });
-    } else if (operator.includes('momo') || operator.includes('mtn')) {
+    } else if (this.isMtnOperator(operator)) {
       verifiedPayload = await this.paynoteService.mtnPaymentStatus({
         messageId: providerMessageId,
       });
@@ -2433,12 +2443,9 @@ export class TransactionsService {
     }
 
     if (decision === 'failed') {
-      const operatorName =
-        transaction.operateur &&
-        (transaction.operateur.toLowerCase().includes('om') ||
-          transaction.operateur.toLowerCase().includes('orange'))
-          ? 'Orange'
-          : 'MTN';
+      const operatorName = this.isOrangeOperator(transaction.operateur)
+        ? 'Orange'
+        : 'MTN';
       const classifiedError = this.classifyPaymentOrKeyError(
         verifiedPayload,
         operatorName,
@@ -2507,9 +2514,9 @@ export class TransactionsService {
 
     const operator = String(demande.operateur || '').toLowerCase();
     const verifiedPayload =
-      operator.includes('om') || operator.includes('orange')
+      this.isOrangeOperator(operator)
         ? await this.paynoteService.orangePaymentStatus({ messageId })
-        : operator.includes('momo') || operator.includes('mtn')
+        : this.isMtnOperator(operator)
           ? await this.paynoteService.mtnPaymentStatus({ messageId })
           : null;
     if (!verifiedPayload) {
@@ -2553,12 +2560,9 @@ export class TransactionsService {
       demande.message_validation =
         'Paiement confirme. Demande en attente de validation administrative.';
     } else if (decision === 'failed') {
-      const operatorName =
-        demande.operateur &&
-        (demande.operateur.toLowerCase().includes('om') ||
-          demande.operateur.toLowerCase().includes('orange'))
-          ? 'Orange'
-          : 'MTN';
+      const operatorName = this.isOrangeOperator(demande.operateur)
+        ? 'Orange'
+        : 'MTN';
       const classifiedError = this.classifyPaymentOrKeyError(
         verifiedPayload,
         operatorName,
@@ -2637,11 +2641,11 @@ export class TransactionsService {
     let statusPayload: unknown;
 
     try {
-      if (operator.includes('om') || operator.includes('orange')) {
+      if (this.isOrangeOperator(operator)) {
         statusPayload = await this.paynoteService.orangePaymentStatus({
           messageId: providerMessageId,
         });
-      } else if (operator.includes('momo') || operator.includes('mtn')) {
+      } else if (this.isMtnOperator(operator)) {
         statusPayload = await this.paynoteService.mtnPaymentStatus({
           messageId: providerMessageId,
         });
@@ -2696,10 +2700,7 @@ export class TransactionsService {
     }
 
     if (decision === 'failed') {
-      const operatorName =
-        operator.includes('om') || operator.includes('orange')
-          ? 'Orange'
-          : 'MTN';
+      const operatorName = this.isOrangeOperator(operator) ? 'Orange' : 'MTN';
       const classifiedError = this.classifyPaymentOrKeyError(
         statusPayload,
         operatorName,
