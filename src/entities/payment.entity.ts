@@ -45,10 +45,10 @@ export class Payment {
   statut: PaymentStatus;
 
   @Index()
-  @Column({ length: 128, nullable: true })
+  @Column({ type: 'varchar', length: 128, nullable: true })
   provider_message_id?: string | null;
 
-  @Column({ length: 60, nullable: true })
+  @Column({ type: 'varchar', length: 60, nullable: true })
   provider_status?: string | null;
 
   @Column({ length: 50, default: 'versement' })
