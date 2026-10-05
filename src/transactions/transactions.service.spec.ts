@@ -878,5 +878,19 @@ describe('TransactionsService - Paynote Resilient Payment & Webhook', () => {
         }),
       );
     });
+
+    it('extrait correctement le provider_status en chaine sans jamais produire [object Object]', () => {
+      const nestedPayload = {
+        payment: { ErrorCode: 200, body: 'Accepted' },
+        status: {
+          ErrorCode: 200,
+          parameters: { status: 'SUCCESSFUL', paytoken: 'MP123' },
+        },
+        provider_message_id: 'MP123',
+      };
+      const extracted = (service as any).extractProviderStatus(nestedPayload);
+      expect(extracted).toBe('SUCCESSFUL');
+      expect(extracted).not.toBe('[object Object]');
+    });
   });
 });

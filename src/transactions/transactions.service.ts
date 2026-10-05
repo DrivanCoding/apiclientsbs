@@ -963,7 +963,17 @@ export class TransactionsService {
         payment.provider_message_id = updates.provider_message_id;
       }
       if (updates.provider_status !== undefined) {
-        payment.provider_status = updates.provider_status;
+        if (typeof updates.provider_status === 'string') {
+          const trimmed = updates.provider_status.trim();
+          payment.provider_status =
+            trimmed === '[object Object]' ? null : trimmed.slice(0, 60);
+        } else if (updates.provider_status === null) {
+          payment.provider_status = null;
+        } else if (typeof updates.provider_status === 'object') {
+          payment.provider_status = this.extractProviderStatus(
+            updates.provider_status,
+          );
+        }
       }
       if (updates.response_payload !== undefined) {
         payment.response_payload =
@@ -1761,17 +1771,54 @@ export class TransactionsService {
   }
 
   private extractProviderStatus(payload: unknown): string | null {
-    if (!payload || typeof payload !== 'object') return null;
+    if (!payload) return null;
+    if (typeof payload === 'string') {
+      const trimmed = payload.trim();
+      return trimmed === '[object Object]' ? null : trimmed.slice(0, 60);
+    }
+    if (typeof payload !== 'object') return null;
+
     const p = payload as any;
-    const raw =
-      p.parameters?.status ||
-      p.data?.status ||
-      p.status ||
-      p.provider_state ||
-      p.body ||
-      p.message ||
-      null;
-    return raw ? String(raw).slice(0, 60) : null;
+    const directCandidates = [
+      p.status?.parameters?.status,
+      p.parameters?.status,
+      p.status?.data?.status,
+      p.data?.status,
+      typeof p.provider_status === 'string' ? p.provider_status : null,
+      typeof p.provider_state === 'string' ? p.provider_state : null,
+      typeof p.status === 'string' ? p.status : null,
+      p.status?.status && typeof p.status.status === 'string' ? p.status.status : null,
+      typeof p.confirmtxnstatus === 'string' ? p.confirmtxnstatus : null,
+      p.status?.confirmtxnstatus && typeof p.status.confirmtxnstatus === 'string'
+        ? p.status.confirmtxnstatus
+        : null,
+      typeof p.body === 'string' ? p.body : null,
+      typeof p.message === 'string' ? p.message : null,
+    ];
+
+    for (const candidate of directCandidates) {
+      if (typeof candidate === 'string') {
+        const trimmed = candidate.trim();
+        if (trimmed && trimmed !== '[object Object]') {
+          return trimmed.slice(0, 60);
+        }
+      }
+    }
+
+    const extracted = this.extractStringField(payload, [
+      'status',
+      'provider_status',
+      'provider_state',
+      'confirmtxnstatus',
+      'body',
+      'message',
+    ]);
+
+    if (extracted && extracted !== '[object Object]') {
+      return extracted.slice(0, 60);
+    }
+
+    return null;
   }
 
   private classifyPaymentOrKeyError(
