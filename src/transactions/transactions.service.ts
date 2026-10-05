@@ -231,6 +231,10 @@ export class TransactionsService {
         );
       }
       if (pendingTx.statut === 'complete') {
+        await this.updatePaymentRecord(references, {
+          statut: 'complete',
+          provider_message_id: pendingTx.provider_message_id,
+        });
         return {
           message: 'Ce versement a deja ete valide.',
           transaction: pendingTx,
@@ -238,6 +242,10 @@ export class TransactionsService {
         };
       }
       if (pendingTx.statut === 'annulee') {
+        await this.updatePaymentRecord(references, {
+          statut: 'cancelled',
+          provider_message_id: pendingTx.provider_message_id,
+        });
         throw new BadRequestException(
           'Cette reference correspond a un versement annule.',
         );
@@ -317,6 +325,11 @@ export class TransactionsService {
         this.logger.warn(
           `Depot ${references}: attente synchrone expiree. Transaction conservee en 'en_attente'.`,
         );
+        await this.updatePaymentRecord(references, {
+          statut: 'pending',
+          provider_status: 'pending',
+          provider_message_id: pendingTx.provider_message_id,
+        });
         return {
           message:
             'Demande de paiement transmise. Votre compte sera credite automatiquement des confirmation par l operateur.',
@@ -568,6 +581,11 @@ export class TransactionsService {
         demande.message_validation =
           'Paiement initie, confirmation operateur en attente.';
         await this.ouvertureTamponRepository.save(demande);
+        await this.updatePaymentRecord(references, {
+          statut: 'pending',
+          provider_status: 'pending',
+          provider_message_id: demande.provider_message_id,
+        });
         return {
           message: demande.message_validation,
           demande,
@@ -578,15 +596,28 @@ export class TransactionsService {
       demande.message_validation =
         error instanceof Error ? error.message : 'Paiement indisponible';
       await this.ouvertureTamponRepository.save(demande);
+      await this.updatePaymentRecord(references, {
+        statut: 'failed',
+        message_erreur: demande.message_validation,
+      });
       throw error;
     }
 
+    const isPending = this.isAcceptedPendingResult(payment);
     demande.payment_json = JSON.stringify(payment);
-    demande.statut_validation = this.isAcceptedPendingResult(payment)
+    demande.statut_validation = isPending
       ? 'payment_pending'
       : 'pending_validation';
     demande.updated_at = new Date();
     await this.ouvertureTamponRepository.save(demande);
+
+    await this.updatePaymentRecord(references, {
+      statut: isPending ? 'pending' : 'complete',
+      provider_status:
+        this.extractProviderStatus(payment) ||
+        (isPending ? 'pending' : 'complete'),
+      response_payload: payment,
+    });
 
     return {
       message:
@@ -803,6 +834,11 @@ export class TransactionsService {
         demande.message_validation =
           'Paiement initie, confirmation operateur en attente.';
         await this.preouvertureTamponRepository.save(demande);
+        await this.updatePaymentRecord(references, {
+          statut: 'pending',
+          provider_status: 'pending',
+          provider_message_id: demande.provider_message_id,
+        });
         return {
           message: demande.message_validation,
           demande,
@@ -813,15 +849,28 @@ export class TransactionsService {
       demande.message_validation =
         error instanceof Error ? error.message : 'Paiement indisponible';
       await this.preouvertureTamponRepository.save(demande);
+      await this.updatePaymentRecord(references, {
+        statut: 'failed',
+        message_erreur: demande.message_validation,
+      });
       throw error;
     }
 
+    const isPending = this.isAcceptedPendingResult(paymentResult);
     demande.payment_json = JSON.stringify(paymentResult);
-    demande.statut_validation = this.isAcceptedPendingResult(paymentResult)
+    demande.statut_validation = isPending
       ? 'payment_pending'
       : 'pending_validation';
     demande.updated_at = new Date();
     await this.preouvertureTamponRepository.save(demande);
+
+    await this.updatePaymentRecord(references, {
+      statut: isPending ? 'pending' : 'complete',
+      provider_status:
+        this.extractProviderStatus(paymentResult) ||
+        (isPending ? 'pending' : 'complete'),
+      response_payload: paymentResult,
+    });
 
     return {
       message:
@@ -904,7 +953,12 @@ export class TransactionsService {
       const payment = await this.paymentRepository.findOneBy({ references });
       if (!payment) return;
 
-      if (updates.statut) payment.statut = updates.statut;
+      if (updates.statut) {
+        payment.statut = updates.statut;
+        if (updates.statut === 'complete' && updates.message_erreur === undefined) {
+          payment.message_erreur = null;
+        }
+      }
       if (updates.provider_message_id) {
         payment.provider_message_id = updates.provider_message_id;
       }
@@ -1015,17 +1069,43 @@ export class TransactionsService {
         'provider_state' in result &&
         (result as any).provider_state === 'accepted_pending';
 
+      const providerStatus = this.extractProviderStatus(result);
       await this.updatePaymentRecord(payload.references, {
         statut: isPending ? 'pending' : 'complete',
+        provider_status: providerStatus || (isPending ? 'pending' : 'complete'),
         response_payload: result,
       });
 
       return result;
     } catch (error) {
-      await this.updatePaymentRecord(payload.references, {
-        statut: 'failed',
-        message_erreur: (error as Error)?.message || String(error),
+      const errMessage = (error as Error)?.message || String(error);
+      const isDefinitiveFailure =
+        errMessage.includes('[CLE_INVALIDE]') ||
+        errMessage.includes('[PAIEMENT_INVALIDE]') ||
+        errMessage.includes('rejete') ||
+        errMessage.includes('refuse') ||
+        errMessage.includes('annule');
+
+      const isCancelled =
+        errMessage.toLowerCase().includes('annul') ||
+        errMessage.toLowerCase().includes('cancel');
+
+      const payment = await this.paymentRepository.findOneBy({
+        references: payload.references,
       });
+      if (payment?.provider_message_id && !isDefinitiveFailure) {
+        await this.updatePaymentRecord(payload.references, {
+          statut: 'pending',
+          provider_status: 'pending',
+          message_erreur: errMessage,
+        });
+      } else {
+        await this.updatePaymentRecord(payload.references, {
+          statut: isCancelled ? 'cancelled' : 'failed',
+          provider_status: isCancelled ? 'cancelled' : 'failed',
+          message_erreur: errMessage,
+        });
+      }
       throw error;
     }
   }
@@ -1678,6 +1758,20 @@ export class TransactionsService {
       .map((item) => `${item.key}=${item.value}`);
 
     return compact.length ? compact.join(', ') : 'statut non interpretable';
+  }
+
+  private extractProviderStatus(payload: unknown): string | null {
+    if (!payload || typeof payload !== 'object') return null;
+    const p = payload as any;
+    const raw =
+      p.parameters?.status ||
+      p.data?.status ||
+      p.status ||
+      p.provider_state ||
+      p.body ||
+      p.message ||
+      null;
+    return raw ? String(raw).slice(0, 60) : null;
   }
 
   private classifyPaymentOrKeyError(
@@ -2345,7 +2439,10 @@ export class TransactionsService {
       );
       await this.updatePaymentRecord(reference, {
         statut: 'complete',
+        provider_status:
+          this.extractProviderStatus(providerPayload) || 'complete',
         response_payload: providerPayload,
+        provider_message_id: transaction.provider_message_id,
       });
       return {
         success: true,
@@ -2491,9 +2588,16 @@ export class TransactionsService {
       this.logger.warn(
         `failPendingDeposit: Transaction ${reference} marquee 'annulee' (motif: ${transaction.message_validation || 'non precise'}).`,
       );
+      const isCancelled =
+        transaction.message_validation?.toLowerCase().includes('annul') ||
+        transaction.message_validation?.toLowerCase().includes('cancel');
+
       await this.updatePaymentRecord(reference, {
-        statut: 'cancelled',
+        statut: isCancelled ? 'cancelled' : 'failed',
+        provider_status: isCancelled ? 'cancelled' : 'failed',
         message_erreur: transaction.message_validation,
+        response_payload: providerPayload,
+        provider_message_id: transaction.provider_message_id,
       });
       return {
         success: true,
@@ -2637,6 +2741,13 @@ export class TransactionsService {
       return { status: 'processed', outcome: 'failed', details: result };
     }
 
+    await this.updatePaymentRecord(transactionReference, {
+      statut: 'pending',
+      provider_status:
+        this.extractProviderStatus(verifiedPayload) || 'pending',
+      response_payload: verifiedPayload,
+      provider_message_id: providerMessageId,
+    });
     return { status: 'acknowledged', outcome: 'pending' };
   }
 
@@ -2739,6 +2850,13 @@ export class TransactionsService {
       demande.statut_validation = 'pending_validation';
       demande.message_validation =
         'Paiement confirme. Demande en attente de validation administrative.';
+      await this.updatePaymentRecord(demande.references, {
+        statut: 'complete',
+        provider_status:
+          this.extractProviderStatus(verifiedPayload) || 'complete',
+        response_payload: verifiedPayload,
+        provider_message_id: messageId,
+      });
     } else if (decision === 'failed') {
       const operatorName = this.isOrangeOperator(demande.operateur)
         ? 'Orange'
@@ -2749,9 +2867,26 @@ export class TransactionsService {
       );
       demande.statut_validation = 'payment_failed';
       demande.message_validation = classifiedError.message;
+      const isCancelled =
+        classifiedError.message.toLowerCase().includes('annul') ||
+        classifiedError.message.toLowerCase().includes('cancel');
+      await this.updatePaymentRecord(demande.references, {
+        statut: isCancelled ? 'cancelled' : 'failed',
+        provider_status: isCancelled ? 'cancelled' : 'failed',
+        message_erreur: classifiedError.message,
+        response_payload: verifiedPayload,
+        provider_message_id: messageId,
+      });
     } else {
       demande.statut_validation = 'payment_pending';
       demande.message_validation = 'Confirmation operateur en attente.';
+      await this.updatePaymentRecord(demande.references, {
+        statut: 'pending',
+        provider_status:
+          this.extractProviderStatus(verifiedPayload) || 'pending',
+        response_payload: verifiedPayload,
+        provider_message_id: messageId,
+      });
     }
     await save();
 
@@ -2793,6 +2928,10 @@ export class TransactionsService {
     }
 
     if (transaction.statut === 'complete') {
+      await this.updatePaymentRecord(references, {
+        statut: 'complete',
+        provider_message_id: transaction.provider_message_id,
+      });
       return {
         status: 'complete',
         message: 'Transaction deja confirmee et compte credite',
@@ -2801,6 +2940,10 @@ export class TransactionsService {
     }
 
     if (transaction.statut === 'annulee') {
+      await this.updatePaymentRecord(references, {
+        statut: 'cancelled',
+        provider_message_id: transaction.provider_message_id,
+      });
       return {
         status: 'failed',
         message: 'Transaction annulee',
@@ -2895,6 +3038,14 @@ export class TransactionsService {
         statusPayload,
       };
     }
+
+    await this.updatePaymentRecord(references, {
+      statut: 'pending',
+      provider_status:
+        this.extractProviderStatus(statusPayload) || 'pending',
+      response_payload: statusPayload,
+      provider_message_id: providerMessageId,
+    });
 
     return {
       status: 'pending',

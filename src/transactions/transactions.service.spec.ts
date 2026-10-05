@@ -30,6 +30,7 @@ describe('TransactionsService - Paynote Resilient Payment & Webhook', () => {
   let mockDataSource: any;
   let mockOuvertureRepo: any;
   let mockPreouvertureRepo: any;
+  let mockPaymentRepo: any;
 
   beforeEach(async () => {
     mockTxRepo = {
@@ -67,7 +68,7 @@ describe('TransactionsService - Paynote Resilient Payment & Webhook', () => {
       update: jest.fn(),
     };
 
-    const mockPaymentRepo = {
+    mockPaymentRepo = {
       findOneBy: jest.fn(),
       save: jest.fn(async (value) => value),
       create: jest.fn((value) => value),
@@ -779,6 +780,102 @@ describe('TransactionsService - Paynote Resilient Payment & Webhook', () => {
       expect(failSpy).toHaveBeenCalledWith(
         'COLL-RECHECK-FAIL',
         expect.objectContaining({ error: expect.stringContaining('[PAIEMENT_INVALIDE]') }),
+      );
+    });
+  });
+
+  describe('Mise a jour du statut dans la table Payment', () => {
+    it('met a jour le payment en complete lors de la finalisation reussie', async () => {
+      const updatePaymentSpy = jest.spyOn(service, 'updatePaymentRecord');
+      const pendingTx: any = {
+        idtransaction: 1,
+        idcompte: 10,
+        references: 'COLL-PAY-COMPLETE',
+        montant_transaction: '1500.00',
+        statut: 'en_attente',
+        type_transaction: 'versement',
+        operateur: 'om',
+      };
+      mockTxRepo.findOne.mockResolvedValue(pendingTx);
+      mockCompteRepo.findOne.mockResolvedValue({
+        idcompte: 10,
+        numero_compte: 'CPT-10',
+        solde: '5000.00',
+        idclient: 1,
+      });
+
+      await service.finalizePendingDeposit('COLL-PAY-COMPLETE', {
+        parameters: { status: 'SUCCESSFUL' },
+      });
+
+      expect(updatePaymentSpy).toHaveBeenCalledWith(
+        'COLL-PAY-COMPLETE',
+        expect.objectContaining({
+          statut: 'complete',
+          provider_status: 'SUCCESSFUL',
+        }),
+      );
+    });
+
+    it('met a jour le payment en cancelled lors de l annulation / echec', async () => {
+      const updatePaymentSpy = jest.spyOn(service, 'updatePaymentRecord');
+      const pendingTx: any = {
+        idtransaction: 2,
+        idcompte: 10,
+        references: 'COLL-PAY-CANCEL',
+        montant_transaction: '2000.00',
+        statut: 'en_attente',
+        type_transaction: 'versement',
+        operateur: 'om',
+        provider_message_id: 'MP-CANCEL-01',
+      };
+      mockTxRepo.findOne.mockResolvedValue(pendingTx);
+
+      await service.failPendingDeposit('COLL-PAY-CANCEL', {
+        error: 'Paiement annule par l utilisateur',
+      });
+
+      expect(updatePaymentSpy).toHaveBeenCalledWith(
+        'COLL-PAY-CANCEL',
+        expect.objectContaining({
+          statut: 'cancelled',
+          provider_status: 'cancelled',
+          provider_message_id: 'MP-CANCEL-01',
+        }),
+      );
+    });
+
+    it('met a jour le payment en complete lors du webhook d ouverture', async () => {
+      const updatePaymentSpy = jest.spyOn(service, 'updatePaymentRecord');
+      const opening: any = {
+        id: 5,
+        references: 'OUV-PAY-01',
+        operateur: 'om',
+        provider_message_id: 'MP-OUV-01',
+        montant_initial: '5000.00',
+        statut_validation: 'payment_pending',
+      };
+      mockOuvertureRepo.findOne.mockResolvedValue(opening);
+      mockPaynoteService.orangePaymentStatus.mockResolvedValue({
+        parameters: {
+          status: 'SUCCESSFUL',
+          order_id: 'OUV-PAY-01',
+          amount: '5000',
+        },
+      });
+
+      await service.handlePaynoteWebhook({
+        order_id: 'OUV-PAY-01',
+        message_id: 'MP-OUV-01',
+      });
+
+      expect(updatePaymentSpy).toHaveBeenCalledWith(
+        'OUV-PAY-01',
+        expect.objectContaining({
+          statut: 'complete',
+          provider_status: 'SUCCESSFUL',
+          provider_message_id: 'MP-OUV-01',
+        }),
       );
     });
   });
