@@ -29,6 +29,7 @@ import { OuvertureCompteDto } from './dto/ouverture-compte.dto';
 import { PreouvertureDto } from './dto/preouverture.dto';
 import { CollecteSyncNotificationDto } from './dto/collecte-sync-notification.dto';
 import { CoreValidationDto } from './dto/core-validation.dto';
+import { Payment, PaymentStatus } from '../entities/payment.entity';
 
 const preouvertureUploadDir = join(process.cwd(), 'uploads', 'preouverture');
 
@@ -213,6 +214,26 @@ export class TransactionsController {
     @Query('date_fin') dateFin?: string,
   ) {
     return this.service.findByClient(id, dateDebut, dateFin);
+  }
+
+  @Get('payments/list')
+  @UseGuards(JwtAuthGuard, AdminRoleGuard)
+  findPayments(
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+    @Query('statut') statut?: PaymentStatus,
+  ) {
+    return this.service.findAllPayments(
+      page ? Number(page) : 1,
+      limit ? Number(limit) : 50,
+      statut,
+    );
+  }
+
+  @Get('payments/reference/:reference')
+  @UseGuards(JwtAuthGuard)
+  findPaymentByReference(@Param('reference') reference: string) {
+    return this.service.findPaymentByReference(reference);
   }
 
   @Get(':id')

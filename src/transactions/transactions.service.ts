@@ -22,6 +22,7 @@ import { Setting } from '../entities/setting.entity';
 import { ListeOperator } from '../entities/liste-operator.entity';
 import { Transaction } from '../entities/transaction.entity';
 import { Typecompte } from '../entities/typecompte.entity';
+import { Payment, PaymentStatus } from '../entities/payment.entity';
 import { MavianceClient } from '../maviance/maviance.client';
 import { MavianceErrorMapper } from '../maviance/maviance-error.mapper';
 import {
@@ -75,8 +76,8 @@ export class TransactionsService {
     private readonly listeOperatorRepository: Repository<ListeOperator>,
     @InjectRepository(Typecompte)
     private readonly typeCompteRepository: Repository<Typecompte>,
-    @InjectRepository(Notification)
-    private readonly notificationRepository: Repository<Notification>,
+    @InjectRepository(Payment)
+    private readonly paymentRepository: Repository<Payment>,
     private readonly dataSource: DataSource,
     private readonly paynoteService: PaynoteService,
     private readonly mavianceClient: MavianceClient,
@@ -268,8 +269,10 @@ export class TransactionsService {
         montant: dto.montant_transaction,
         references,
         description,
+        typeOperation: 'versement',
         idcompte: dto.idcompte,
         idclient: effectiveClientId,
+        iduser: dto.iduser,
         onProviderReference: async (messageId) => {
           pendingTx.provider_message_id = messageId;
           await this.repository.update(pendingTx.idtransaction, {
@@ -550,6 +553,9 @@ export class TransactionsService {
         montant: dto.montant_initial,
         references,
         description,
+        typeOperation: 'ouverture',
+        idcompte: undefined,
+        idclient: authenticatedClientId,
         onProviderReference: async (messageId) => {
           demande.provider_message_id = messageId;
           await this.ouvertureTamponRepository.update(demande.id, {
@@ -781,6 +787,7 @@ export class TransactionsService {
         montant: dto.montant_initial,
         references,
         description,
+        typeOperation: 'preouverture',
         customerEmail: normalizedEmail,
         customerName: [dto.prenom, dto.nom].filter(Boolean).join(' '),
         customerAddress: dto.adresse,
@@ -838,24 +845,189 @@ export class TransactionsService {
     return `/uploads/preouverture/${file.filename}`;
   }
 
+  async recordPaymentInitiated(payload: {
+    references: string;
+    gateway: string;
+    operateur: 'om' | 'momo';
+    numeroTelephone: string;
+    montant: number;
+    description: string;
+    typeOperation?: string;
+    idcompte?: number;
+    idclient?: number;
+    iduser?: number;
+    requestPayload?: unknown;
+  }): Promise<Payment | null> {
+    try {
+      const existing = await this.paymentRepository.findOneBy({
+        references: payload.references,
+      });
+      if (existing) {
+        return existing;
+      }
+      const payment = this.paymentRepository.create({
+        references: payload.references,
+        gateway: payload.gateway,
+        operateur: payload.operateur,
+        numero_telephone: payload.numeroTelephone,
+        montant: Number(payload.montant).toFixed(2),
+        statut: 'initiated',
+        type_operation: payload.typeOperation || 'versement',
+        idcompte: payload.idcompte ?? null,
+        idclient: payload.idclient ?? null,
+        iduser: payload.iduser ?? null,
+        description: payload.description,
+        request_payload: payload.requestPayload
+          ? JSON.stringify(payload.requestPayload)
+          : null,
+      });
+      return await this.paymentRepository.save(payment);
+    } catch (error) {
+      this.logger.warn(
+        `Impossible d'enregistrer le paiement initie ${payload.references}: ${(error as Error)?.message || error}`,
+      );
+      return null;
+    }
+  }
+
+  async updatePaymentRecord(
+    references: string,
+    updates: {
+      statut?: PaymentStatus;
+      provider_message_id?: string | null;
+      provider_status?: string | null;
+      response_payload?: unknown;
+      message_erreur?: string | null;
+    },
+  ) {
+    try {
+      const payment = await this.paymentRepository.findOneBy({ references });
+      if (!payment) return;
+
+      if (updates.statut) payment.statut = updates.statut;
+      if (updates.provider_message_id) {
+        payment.provider_message_id = updates.provider_message_id;
+      }
+      if (updates.provider_status !== undefined) {
+        payment.provider_status = updates.provider_status;
+      }
+      if (updates.response_payload !== undefined) {
+        payment.response_payload =
+          typeof updates.response_payload === 'string'
+            ? updates.response_payload
+            : JSON.stringify(updates.response_payload);
+      }
+      if (updates.message_erreur !== undefined) {
+        payment.message_erreur = updates.message_erreur;
+      }
+      await this.paymentRepository.save(payment);
+    } catch (error) {
+      this.logger.warn(
+        `Impossible de mettre a jour le paiement ${references}: ${(error as Error)?.message || error}`,
+      );
+    }
+  }
+
+  findAllPayments(page = 1, limit = 50, statut?: PaymentStatus) {
+    const where: any = {};
+    if (statut) where.statut = statut;
+    return this.paymentRepository.find({
+      where: Object.keys(where).length ? where : undefined,
+      order: { id: 'DESC' },
+      skip: (page - 1) * limit,
+      take: limit,
+    });
+  }
+
+  findPaymentByReference(reference: string) {
+    return this.paymentRepository.findOneBy({ references: reference });
+  }
+
   private async collectWithConfiguredGateway(payload: {
     operateur: 'om' | 'momo';
     numeroTelephone: string;
     montant: number;
     references: string;
     description: string;
+    typeOperation?: 'versement' | 'preouverture' | 'ouverture';
     idcompte?: number;
     idclient?: number;
+    iduser?: number;
     customerEmail?: string;
     customerName?: string;
     customerAddress?: string;
     onProviderReference?: (messageId: string) => Promise<void>;
   }) {
-    if (this.getConfiguredPaymentGateway() === 'maviance') {
-      return this.collectWithMaviance(payload);
-    }
+    const gateway = this.getConfiguredPaymentGateway();
 
-    return this.collectWithPaynote(payload);
+    await this.recordPaymentInitiated({
+      references: payload.references,
+      gateway,
+      operateur: payload.operateur,
+      numeroTelephone: payload.numeroTelephone,
+      montant: payload.montant,
+      description: payload.description,
+      typeOperation: payload.typeOperation,
+      idcompte: payload.idcompte,
+      idclient: payload.idclient,
+      iduser: payload.iduser,
+      requestPayload: {
+        gateway,
+        operateur: payload.operateur,
+        montant: payload.montant,
+        numeroTelephone: payload.numeroTelephone,
+        references: payload.references,
+        description: payload.description,
+      },
+    });
+
+    const wrappedOnProviderReference = async (messageId: string) => {
+      await this.updatePaymentRecord(payload.references, {
+        provider_message_id: messageId,
+        statut: 'pending',
+      });
+      await payload.onProviderReference?.(messageId);
+    };
+
+    try {
+      const result =
+        gateway === 'maviance'
+          ? await this.collectWithMaviance({
+              operateur: payload.operateur,
+              numeroTelephone: payload.numeroTelephone,
+              montant: payload.montant,
+              references: payload.references,
+              description: payload.description,
+              idcompte: payload.idcompte,
+              idclient: payload.idclient,
+              customerEmail: payload.customerEmail,
+              customerName: payload.customerName,
+              customerAddress: payload.customerAddress,
+            })
+          : await this.collectWithPaynote({
+              ...payload,
+              onProviderReference: wrappedOnProviderReference,
+            });
+
+      const isPending =
+        result &&
+        typeof result === 'object' &&
+        'provider_state' in result &&
+        (result as any).provider_state === 'accepted_pending';
+
+      await this.updatePaymentRecord(payload.references, {
+        statut: isPending ? 'pending' : 'complete',
+        response_payload: result,
+      });
+
+      return result;
+    } catch (error) {
+      await this.updatePaymentRecord(payload.references, {
+        statut: 'failed',
+        message_erreur: (error as Error)?.message || String(error),
+      });
+      throw error;
+    }
   }
 
   private async collectWithPaynote(payload: {
@@ -2171,6 +2343,10 @@ export class TransactionsService {
       this.logger.log(
         `finalizePendingDeposit: Transaction ${reference} confirmee et compte ${compte.numero_compte} credite de ${amount} XAF.`,
       );
+      await this.updatePaymentRecord(reference, {
+        statut: 'complete',
+        response_payload: providerPayload,
+      });
       return {
         success: true,
         transaction: savedTransaction,
@@ -2315,6 +2491,10 @@ export class TransactionsService {
       this.logger.warn(
         `failPendingDeposit: Transaction ${reference} marquee 'annulee' (motif: ${transaction.message_validation || 'non precise'}).`,
       );
+      await this.updatePaymentRecord(reference, {
+        statut: 'cancelled',
+        message_erreur: transaction.message_validation,
+      });
       return {
         success: true,
         transaction: saved,

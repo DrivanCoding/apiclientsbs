@@ -11,6 +11,7 @@ import { PreouvertureClientTampon } from '../entities/preouverture-client-tampon
 import { Setting } from '../entities/setting.entity';
 import { Typecompte } from '../entities/typecompte.entity';
 import { ListeOperator } from '../entities/liste-operator.entity';
+import { Payment } from '../entities/payment.entity';
 import {
   PaynoteService,
   PaynoteInvalidCredentialsError,
@@ -66,6 +67,14 @@ describe('TransactionsService - Paynote Resilient Payment & Webhook', () => {
       update: jest.fn(),
     };
 
+    const mockPaymentRepo = {
+      findOneBy: jest.fn(),
+      save: jest.fn(async (value) => value),
+      create: jest.fn((value) => value),
+      find: jest.fn(async () => []),
+      update: jest.fn(),
+    };
+
     mockDataSource = {
       transaction: jest.fn(async (callback) => {
         const manager = {
@@ -103,6 +112,7 @@ describe('TransactionsService - Paynote Resilient Payment & Webhook', () => {
         { provide: getRepositoryToken(Setting), useValue: {} },
         { provide: getRepositoryToken(Typecompte), useValue: {} },
         { provide: getRepositoryToken(ListeOperator), useValue: {} },
+        { provide: getRepositoryToken(Payment), useValue: mockPaymentRepo },
         { provide: PaynoteService, useValue: mockPaynoteService },
         { provide: MavianceClient, useValue: {} },
         { provide: NotificationsService, useValue: mockNotificationsService },

@@ -9,6 +9,7 @@ import { Setting } from '../entities/setting.entity';
 import { Transaction } from '../entities/transaction.entity';
 import { Typecompte } from '../entities/typecompte.entity';
 import { ListeOperator } from '../entities/liste-operator.entity';
+import { Payment } from '../entities/payment.entity';
 import { PaynoteModule } from '../paynote/paynote.module';
 import { MavianceModule } from '../maviance/maviance.module';
 import { NotificationsModule } from '../notifications/notifications.module';
@@ -29,6 +30,7 @@ import { TransactionsService } from './transactions.service';
       Setting,
       Typecompte,
       ListeOperator,
+      Payment,
     ]),
     PaynoteModule,
     MavianceModule,

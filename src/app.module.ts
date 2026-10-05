@@ -28,6 +28,7 @@ import { NotificationsModule } from './notifications/notifications.module';
 import { ActualitesModule } from './actualites/actualites.module';
 import { MavianceTransaction } from './entities/maviance-transaction.entity';
 import { MavianceServiceCache } from './entities/maviance-service-cache.entity';
+import { Payment } from './entities/payment.entity';
 import { MavianceModule } from './maviance/maviance.module';
 import { SmsModule } from './sms/sms.module';
 
@@ -57,6 +58,7 @@ import { SmsModule } from './sms/sms.module';
         Actualite,
         MavianceTransaction,
         MavianceServiceCache,
+        Payment,
       ],
       synchronize: false,
     }),
