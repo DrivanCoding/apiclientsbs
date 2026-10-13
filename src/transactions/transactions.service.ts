@@ -2539,25 +2539,27 @@ export class TransactionsService {
           where: { idcompte: transaction.idcompte },
           lock: { mode: 'pessimistic_write' },
         });
-        if (!compte) {
-          throw new NotFoundException('Compte mobile introuvable');
-        }
+        if (compte) {
+          const amount = Number(transaction.montant_transaction);
+          const currentBalance = Number(compte.solde || 0);
+          compte.solde = (currentBalance - amount).toFixed(2);
+          await manager.save(compte);
 
-        const amount = Number(transaction.montant_transaction);
-        const currentBalance = Number(compte.solde || 0);
-        compte.solde = (currentBalance - amount).toFixed(2);
-        await manager.save(compte);
-
-        const reason = dto.message?.trim() || 'Operation rejetee par le Core Banking.';
-        const notification = manager.create(Notification, {
-          idclient: Number(compte.idclient || 0),
-          titre: 'Versement rejete',
-          message: `Votre versement de ${amount.toLocaleString('fr-FR')} XAF sur le compte ${compte.numero_compte} a ete rejete. Motif : ${reason}`,
-          type: 'versement',
-          lu: 0,
-        });
-        if (notification.idclient > 0) {
-          savedNotification = await manager.save(notification);
+          const reason = dto.message?.trim() || 'Operation rejetee par le Core Banking.';
+          const notification = manager.create(Notification, {
+            idclient: Number(compte.idclient || 0),
+            titre: 'Versement rejete',
+            message: `Votre versement de ${amount.toLocaleString('fr-FR')} XAF sur le compte ${compte.numero_compte} a ete rejete. Motif : ${reason}`,
+            type: 'versement',
+            lu: 0,
+          });
+          if (notification.idclient > 0) {
+            savedNotification = await manager.save(notification);
+          }
+        } else {
+          this.logger.warn(
+            `applyCoreValidation: compte ${transaction.idcompte} introuvable pour la transaction #${transaction.idtransaction}. Rejet applique sans ajustement de solde.`,
+          );
         }
       }
 
